@@ -55,9 +55,16 @@ RUN apt-get update && \
     (rosdep init || true) && \
     rosdep update --rosdistro "$ROS_DISTRO" && \
     rosdep install --from-paths src -y -i && \
-    pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Python-only dependencies, in their own layer so a pip failure does not
+# throw away the apt/rosdep one above. huggingface_hub wants a newer idna
+# than Debian's, and pip cannot uninstall a Debian-installed package ("RECORD
+# file not found"): idna alone is installed over it. Not --ignore-installed
+# for the rest, which would shadow Debian's numpy that ROS is built against.
+RUN pip3 install --break-system-packages --ignore-installed idna && \
+    pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags
 
 # The real source, now that the slow network-installs above are cached.
 # Everything from here on re-runs on every src/ change, but that's just the
