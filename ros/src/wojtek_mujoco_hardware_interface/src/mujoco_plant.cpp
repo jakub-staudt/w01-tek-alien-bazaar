@@ -256,7 +256,11 @@ double MujocoPlant::jointVelocity(int actuator) const
 
 double MujocoPlant::jointEffort(int actuator) const
 {
-  return data_->actuator_force[actuator];
+  // The joint's whole torque, servo plus feed-forward head, as the drive
+  // measures it (md.getTorque()) and as the training env accounts it
+  // (actuator_force + tau_ff). Both are zero in dry run: advance() clears
+  // them, and setFeedForward() withholds the head.
+  return data_->actuator_force[actuator] + data_->qfrc_applied[dof_adr_[actuator]];
 }
 
 void MujocoPlant::setCommand(int actuator, double q_relative)

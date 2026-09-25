@@ -57,14 +57,21 @@ RUN apt-get update && \
     (rosdep init || true) && \
     rosdep update --rosdistro "$ROS_DISTRO" && \
     rosdep install --from-paths src -y -i && \
-    # pip refuses to replace Debian's idna (no RECORD file) when a wheel
-    # below asks for a newer one, and aborts the whole install; putting a
-    # pip-owned idna in first ends that. Seen on a fresh ros:jazzy-ros-core
-    # on 2026-09-25 (the experiment images work around it with a venv).
-    pip3 install --break-system-packages --ignore-installed idna && \
-    pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# Python-only dependencies, in their own layer so a pip failure does not
+# throw away the apt/rosdep one above. huggingface_hub wants a newer idna
+# than Debian's, and pip cannot uninstall python3-idna ("RECORD file not
+# found"): idna alone is installed over it. Not --ignore-installed for the
+# rest, which would shadow Debian's numpy that ROS is built against. One
+# known overlap remains: mujoco wants websockets>=13 and pip does manage to
+# replace Debian's python3-websockets 10.4 (a rosdep of wojtek_pc), so dpkg
+# lists a package whose files are pip's 17.x; web_console runs on either.
+# The three are unpinned: a resolver change upstream shows up as a failed
+# pip layer, not a broken image.
+RUN pip3 install --break-system-packages --ignore-installed idna && \
+    pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags
 
 # The real source, now that the slow network-installs above are cached.
 # Everything from here on re-runs on every src/ change, but that's just the

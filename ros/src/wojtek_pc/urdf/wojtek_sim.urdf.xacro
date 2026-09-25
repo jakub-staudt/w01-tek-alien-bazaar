@@ -85,9 +85,10 @@
       <param name="ddq_kp">${kp}</param>
       <param name="ddq_kd">${kd}</param>
       <!-- The servo's own cap: max_torque arrives as the drive cap (servo
-           plus head), and tau_ff_scale is zero without the head. -->
-      <param name="max_torque">${max_torque - tau_ff_scale}</param>
-      <param name="tau_ff_scale">${tau_ff_scale}</param>
+           plus head). The head's share comes off only with the head on,
+           so a stray tau_ff_scale cannot shrink a plain servo's cap. -->
+      <param name="max_torque">${max_torque - (tau_ff_scale if tau_ff else 0.0)}</param>
+      <param name="tau_ff_scale">${tau_ff_scale if tau_ff else 0.0}</param>
     </joint>
   </xacro:macro>
 
@@ -96,8 +97,14 @@
       <xacro:if value="${'$(arg hw)' == 'mock'}">
         <plugin>mock_components/GenericSystem</plugin>
         <!-- Integrate velocity from the position commands instead of
-             reporting zero, so /joint_states is not obviously fake. -->
-        <param name="calculate_dynamics">true</param>
+             reporting zero, so /joint_states is not obviously fake. Not
+             with the torque head: calculate_dynamics refuses the effort
+             command interface forward_effort_controller claims, and the
+             spawner takes every controller after it down (the robot's
+             mock, wojtek_mock_ros2_control.urdf.xacro, never sets it). -->
+        <xacro:unless value="$(arg tau_ff)">
+          <param name="calculate_dynamics">true</param>
+        </xacro:unless>
       </xacro:if>
       <xacro:unless value="${'$(arg hw)' == 'mock'}">
         <plugin>wojtek_mujoco_hardware_interface/MujocoHardwareInterface</plugin>
@@ -144,12 +151,13 @@
          real xacro exactly.
 
          The initial values matter for the mock, which has no physics to
-         produce them: they describe a level robot with the IMU in its real
-         mounting (rotated pi about y). orientation (w0 x0 y1 z0) is that
-         rotation, and the accelerometer reads -9.81 on its own z; either
-         path through policy_node (the quaternion, or the complementary
-         filter over the accelerometer) then resolves gravity to [0,0,-1] in
-         base_link. The magnetometer values are a plausible mid-latitude
+         produce them: they describe a level, motionless robot with the
+         sensor upright (URDF imu_joint rpy 0 0 0, the same mount the
+         mujoco branch and the robot's mock declare): identity orientation
+         and +g on the accelerometer's z; either path through policy_node
+         (the quaternion, or the complementary filter over the
+         accelerometer) then resolves gravity to [0,0,-1] in base_link.
+         The magnetometer values are a plausible mid-latitude
          field in microtesla (the broadcaster converts to tesla); nothing in
          the control path reads them yet. -->
     <xacro:if value="$(arg use_imu)">
@@ -158,13 +166,13 @@
           <param name="initial_value">0.0</param>
         </state_interface>
         <state_interface name="orientation.y">
-          <param name="initial_value">1.0</param>
+          <param name="initial_value">0.0</param>
         </state_interface>
         <state_interface name="orientation.z">
           <param name="initial_value">0.0</param>
         </state_interface>
         <state_interface name="orientation.w">
-          <param name="initial_value">0.0</param>
+          <param name="initial_value">1.0</param>
         </state_interface>
         <state_interface name="magnetometer.x">
           <param name="initial_value">20.0</param>
@@ -191,7 +199,7 @@
           <param name="initial_value">0.0</param>
         </state_interface>
         <state_interface name="linear_acceleration.z">
-          <param name="initial_value">-9.81</param>
+          <param name="initial_value">9.81</param>
         </state_interface>
       </sensor>
     </xacro:if>

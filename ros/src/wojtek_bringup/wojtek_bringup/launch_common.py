@@ -100,6 +100,9 @@ def _launch_setup(context, with_rviz, hardware):
              f"{drive_torque:g}" if tau_ff_on else ""))
 
     use_imu = LaunchConfiguration("use_imu")
+    mock_hw = hardware == "real" and (
+        LaunchConfiguration("mock_hw").perform(context).lower() in ("true", "1")
+    )
     # Who owns odom->base_link: the leg-kinematics + IMU odometry (the robot,
     # and the sim when a map is to inherit the odometry's honest drift) or
     # the platform's placeholder (static identity / the sim's ground truth).
@@ -126,6 +129,7 @@ def _launch_setup(context, with_rviz, hardware):
             " imu_addr_mag:=", LaunchConfiguration("imu_addr_mag"),
             " bus:=", LaunchConfiguration("bus"),
             " can_baud:=", LaunchConfiguration("can_baud"),
+            " mock_hw:=", LaunchConfiguration("mock_hw"),
         ]
     else:
         # wojtek_pc is PC-side and never deployed, so this import-by-name is
@@ -331,7 +335,21 @@ def _launch_setup(context, with_rviz, hardware):
                 Node(
                     package="foxglove_bridge",
                     executable="foxglove_bridge",
-                    parameters=[{"port": 8765}],
+                    parameters=[{
+                        "port": 8765,
+                        # Never the raw colour image: one viewer panel on it
+                        # pulled ~19 MB/s through DDS and eth0, saturated
+                        # cores 0,1 and stretched the policy's output gaps
+                        # from 23 to 111 ms (ros/hw_tests/perf). The JPEG
+                        # (<topic>/compressed) and depth stay available;
+                        # the depth's own /compressed (a lossy 8-bit JPEG of
+                        # 16-bit millimetres) is useless and costs the Pi an
+                        # encode per frame, so it goes too.
+                        "topic_whitelist": [
+                            r"^(?!/camera/camera/(color/image_raw"
+                            r"|depth/image_rect_raw/compressed)$).*$"
+                        ],
+                    }],
                     prefix=_cpu_prefix(context, "foxglove_cpus"),
                     output="screen",
                 )
@@ -385,8 +403,12 @@ def _launch_setup(context, with_rviz, hardware):
                     ),
                     # The panel's restart button restarts this unit; the
                     # simulation has none, so there the button stays off.
+                    # So does a mock_hw stack (ros/hw_tests/perf): it does
+                    # not run in the boot service, and restarting that one
+                    # from here would start the real drivers next to it.
                     "stack_unit": (
-                        "wojtek-robot.service" if hardware == "real" else ""
+                        "wojtek-robot.service"
+                        if hardware == "real" and not mock_hw else ""
                     ),
                     # Frames a second the gateway passes on to the panel.
                     "stream_hz": ParameterValue(
@@ -398,10 +420,12 @@ def _launch_setup(context, with_rviz, hardware):
     )
 
     # The colour camera for the panel, on the robot only (the simulation
-    # renders its own). Colour alone, no depth, no point cloud, no sync:
+    # renders its own). Colour plus depth at the sensor's own 424x240 is
+    # the set measured safe on the Pi; no point cloud, no sync, no align:
     # the perception stack's d435.yaml turns those on together and the
     # RealSense node dies with SIGSEGV the moment the RGB sensor starts
-    # (see ros/deploy/deck/README.md). 640x480 rather than the sensor's
+    # (see ros/deploy/deck/README.md). The depth is the raw stream, without
+    # d435.yaml's preset and temporal filter. 640x480 rather than the sensor's
     # 1280x720 is the Pi's budget: at full size the camera node and the
     # gateway starved the control loop until the drives dropped to idle.
     # initial_reset: a D435 that comes up publishing nothing (seen after a
@@ -419,7 +443,24 @@ def _launch_setup(context, with_rviz, hardware):
                 parameters=[
                     {
                         "initial_reset": True,
-                        "enable_depth": False,
+                        # Depth rides in the same node when asked for (the
+                        # off-board VLM's map): the sensor's own low
+                        # resolution, so the Pi does no decimation, and
+                        # no sync/align/cloud -- those stay off-board.
+                        "enable_depth": ParameterValue(
+                            LaunchConfiguration("deck_camera_depth"), value_type=bool
+                        ),
+                        "depth_module.depth_profile": LaunchConfiguration(
+                            "deck_camera_depth_profile"
+                        ),
+                        # Beyond 3 m the D435's depth is noise for the map
+                        # (docs/perception/d435-noise.md) and a far or
+                        # invalid return can come out as 65535: zero it in
+                        # the driver, which also keeps a viewer's depth scale
+                        # sane.
+                        "clip_distance": 3.0,
+                        "enable_infra1": False,
+                        "enable_infra2": False,
                         "enable_color": True,
                         "rgb_camera.color_profile": LaunchConfiguration(
                             "deck_camera_profile"
@@ -555,6 +596,11 @@ def common_launch_description(
             # 0x6B/0x1E if the board's SDO pins are pulled high.
             DeclareLaunchArgument("imu_addr_ag", default_value="0x6A"),
             DeclareLaunchArgument("imu_addr_mag", default_value="0x1C"),
+            # Motors unpowered, computer under test: the drives and the IMU
+            # become ros2_control's GenericSystem while every node, rate and
+            # core pin stays as it is on the robot. For profiling the RPi
+            # (ros/hw_tests/perf), not for driving.
+            DeclareLaunchArgument("mock_hw", default_value="false"),
         ]
     else:
         args += [
@@ -704,6 +750,13 @@ def common_launch_description(
         ),
         DeclareLaunchArgument("deck_camera", default_value="false"),
         DeclareLaunchArgument("deck_camera_profile", default_value="640x480x30"),
+        # Depth from the same camera node, for an off-board consumer (the
+        # VLM's map). On with the camera; profile WxHxFPS at the sensor.
+        # 424x240 is the camera contract the simulation renders to
+        # (wojtek_pc.camera_spec), native on the D435 so the Pi does no
+        # decimation.
+        DeclareLaunchArgument("deck_camera_depth", default_value="true"),
+        DeclareLaunchArgument("deck_camera_depth_profile", default_value="424x240x15"),
         DeclareLaunchArgument("deck_stream_hz", default_value="30.0"),
         OpaqueFunction(
             function=_launch_setup,
