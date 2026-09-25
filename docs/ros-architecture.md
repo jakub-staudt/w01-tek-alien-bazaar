@@ -77,8 +77,9 @@ eksportuje te same interfejsy. Trzy rzeczy w nim nie są „tylko symulacją":
   reszty (dt=4 ms pod pętlą 2,5 ms), a nie o całe kroki — inaczej dostajemy
   jitter, którego robot nie ma;
 - **montaż IMU**: odczyty są obracane do ramki fizycznego czujnika
-  (`imu_mount_rpy`, domyślnie 0,π,0), więc `policy_node` odkręca realny montaż,
-  a nie zero. Magnetometr jest syntetyzowany (pole ziemskie); hard-iron
+  (`imu_mount_rpy`, `0 0 -π/2` jak `imu_joint` w URDF — czujnik pionowo,
+  obrócony o −90° w yaw), więc `policy_node` i `leg_odometry_node` odkręcają
+  realny montaż, a nie zero. Magnetometr jest syntetyzowany (pole ziemskie); hard-iron
   świadomie nie — to osobna robota.
 
 Ground truth (którego robot nie ma) publikuje sam plugin, 100 Hz:
@@ -144,7 +145,7 @@ Runtime wytrenowanej polityki RL + node ROS. Działa na RPi i w symulacji.
 | srv | `/wojtek/enable` | `std_srvs/SetBool` |
 | srv | `/wojtek/reset` | `std_srvs/Trigger` |
 
-Parametry: `policy_dir`, `joint_map_yaml`, `imu_mount_rpy` (rotacja IMU→base_link; real: `[0, π, 0]`, sim: zera), `clamp_knee`, `auto_enable`, `soft_start_s` (blend od pozy mierzonej do wyjścia polityki), `watchdog_timeout_s` (0.2 s — przy nieświeżych danych **wstrzymuje publikację**; MD80 trzyma ostatni cel), `cmd_timeout_s` (0.5 s — dead-man na `/cmd_vel`: po takiej ciszy źródła komenda prędkości czyta się jako zero, wysokość zostaje; 0 wyłącza; `command_gate.py`), `gravity_from_accel` (filtr komplementarny zamiast kwaternionu IMU, dla IMU bez fuzji).
+Parametry: `policy_dir`, `joint_map_yaml`, `imu_mount_rpy` (rotacja IMU→base_link; domyślnie zera, bringup podaje `IMU_MOUNT_RPY` z `launch_common` = `[0, 0, -π/2]`, kopię `imu_joint` z `body.urdf.xacro` — na robocie i w symie, bo plugin MuJoCo emuluje ten sam montaż), `clamp_knee`, `auto_enable`, `soft_start_s` (blend od pozy mierzonej do wyjścia polityki), `watchdog_timeout_s` (0.2 s — przy nieświeżych danych **wstrzymuje publikację**; MD80 trzyma ostatni cel), `cmd_timeout_s` (0.5 s — dead-man na `/cmd_vel`: po takiej ciszy źródła komenda prędkości czyta się jako zero, wysokość zostaje; 0 wyłącza; `command_gate.py`), `gravity_from_accel` (filtr komplementarny zamiast kwaternionu IMU, dla IMU bez fuzji).
 
 Zabezpieczenia: watchdog świeżości per-sensor (polityka bez IMU przeżywa dropout IMU), dead-man na `/cmd_vel` (martwe źródło komend zatrzymuje robota po `cmd_timeout_s`, nie zostawia go idącego), odrzucanie NaN w wejściach (NaN zatruwałby stan przez pętlę `last_action`), reset stanu polityki na krawędzi hold→run.
 
@@ -231,7 +232,7 @@ Nie ma topicu statusu arm/enable — konsola śledzi stan lokalnie z odpowiedzi 
 
 **Launche:**
 
-* `sim.launch.py` — robot_state_publisher + mujoco_sim_node + policy_node (imu_mount_rpy=0, soft_start 0.5 s, bez clamp_knee) + text_commander (#92; rezydentny — milczy dopóki nie dostanie komendy) + RViz. Argumenty: `rviz`, `initial_pose`, `camera` (true), `camera_depth_hz`, `camera_color_hz`. Argumenty `name:=value` przechodzą z `./sim.sh` przez `robot.py` (np. `./sim.sh camera:=false`).
+* `sim.launch.py` — robot_state_publisher + mujoco_sim_node + policy_node (imu_mount_rpy=`IMU_MOUNT_RPY`, jak na robocie; soft_start 0.5 s, bez clamp_knee) + text_commander (#92; rezydentny — milczy dopóki nie dostanie komendy) + RViz. Argumenty: `rviz`, `initial_pose`, `camera` (true), `camera_depth_hz`, `camera_color_hz`. Argumenty `name:=value` przechodzą z `./sim.sh` przez `robot.py` (np. `./sim.sh camera:=false`).
 * `viz.launch.py` — czyste PC-side dla żywego robota: RViz (czyta `/robot_description` i `/tf` z RPi po DDS), opcjonalnie PlotJuggler, oraz rosbag całego runu **na żądanie** (`bag:=true`, do `~/wojtek_bags/run_<timestamp>`; domyślnie wyłączony). Zero hardware'u, zero RSP.
 
 ## 4. `md80_hardware_interface` — napędy (C++, plugin ros2_control)
@@ -265,8 +266,11 @@ driverem `joy` oraz — od #92 — komendy tekstowe. Oba mówią tym samym
 zmienia.
 
 **Node: `gamepad_teleop`** — lewy drążek vx/yaw, prawy strafe, A = arm,
-Y/B = stand_up/lie_down, D-pad = wysokość; skalowanie do boxa komend z
-kontraktu polityki, dead-man `cmd_timeout_s` (0.5 s) po zaniku `joy`.
+Y/B = stand_up/lie_down, LB/RB = wysokość, D-pad = triki; pełne
+wychylenie drążka sięga `speed_scale` × boxa komend (domyślnie 0.4;
+argument `gamepad_speed:=` bringupu, 1.0 = krawędź boxa, czyli prędkość
+maksymalna z treningu); box z kontraktu polityki, a bez niej domyślny
+węzła (0.6 m/s, 0.4 m/s, 0.7 rad/s), dead-man `cmd_timeout_s` (0.5 s) po zaniku `joy`.
 Publikuje tylko, gdy ktoś jedzie: driver `joy` powtarza stan
 bezczynnego pada bez końca, ale drążki w martwej strefie nie są wejściem.
 Po ich puszczeniu (albo po zaniku `joy`) leci zerowy Twist przez 2 s i
@@ -301,7 +305,9 @@ Parametry: `v_forward` (0.3 m/s), `w_turn` (0.5 rad/s), `command_timeout`
 Źródło `odom` dla nawigacji: stopa w stance jest przyszpilona do podłogi,
 więc jakobian każdej nogi w stance mierzy prędkość korpusu; średnia po
 zbiorze stance obracana orientacją z IMU i całkowana do pozy planarnej
-(roll/pitch wprost z IMU, z = 0). Kontakt z **wysokości stopy** po
+(roll/pitch wprost z IMU, z = 0). Orientacja i żyroskop IMU przychodzą w
+osiach czujnika; parametr `imu_mount_rpy` (z bringupu: `IMU_MOUNT_RPY`)
+obraca je do `base_link`. Kontakt z **wysokości stopy** po
 wypoziomowaniu IMU (moment kolana tylko jako próg odciążenia — zmierzone,
 że sam moment nie oddziela stance od swing). Szczegóły i zmierzony dryf
 (1–3 % dystansu w symie) w README pakietu.

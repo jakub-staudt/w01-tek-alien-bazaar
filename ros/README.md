@@ -144,9 +144,12 @@ per core, policy tick time, drive command, joints, IMU and the console in one
 window.
 
 **Bluetooth Xbox pad**: left stick = vx/yaw, right stick left-right = strafe,
-**A** toggles arm, D-pad up/down steps the standing height; on the `joy`
-paths **Y**/**B** additionally trigger the stand-up / lie-down ramps (browser
-pads keep those on the console buttons). Driving is always live (no
+**A** toggles arm, LB/RB step the standing height; on the `joy` paths
+**Y**/**B** additionally trigger the stand-up / lie-down ramps and the D-pad
+the tricks (browser pads keep those on the console buttons). Full stick
+reaches `gamepad_speed` (default 0.4) of the policy's command box, so the
+robot walks at a fraction of its trained top speed; raise it for open floor.
+Driving is always live (no
 drive-enable gate); a dead-man zeroes `/cmd_vel` if the pad drops off. Two
 paths, same drive mapping:
 
@@ -239,7 +242,8 @@ Flags:
 --web-console   browser operator console on http://localhost:8080 instead
                 of the Qt window (no X11; works from a phone on the AP)
 --gamepad       bluetooth Xbox pad teleop (left stick vx/yaw, right stick
-                strafe, A arms, Y/B stand up / lie down, D-pad height);
+                strafe, A arms, Y/B stand up / lie down, LB/RB height,
+                D-pad tricks);
                 runs ON the RPi against the real robot (pair the pad with
                 the robot), locally with --sim; add --no-console to
                 replace the console entirely
