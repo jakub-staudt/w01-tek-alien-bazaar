@@ -136,6 +136,14 @@ hardware_interface::CallbackReturn MujocoHardwareInterface::on_init(
   const double gt_hz = std::stod(
     param(info_.hardware_parameters, "ground_truth_rate_hz", "100"));
   ground_truth_period_ = gt_hz > 0.0 ? 1.0 / gt_hz : 0.0;
+  // Which frame the true base pose is broadcast as. "base_link" makes the
+  // ground truth the robot's odometry (the default: nothing else in the sim
+  // claims odom->base_link). A run that lets leg_odometry own that edge --
+  // so a map built on it inherits the odometry's real drift -- moves the
+  // truth aside to e.g. "base_link_gt", where it stays visible in RViz and
+  // available to the drift meters.
+  ground_truth_child_frame_ = param(
+    info_.hardware_parameters, "ground_truth_child_frame", "base_link");
 
   // Every joint takes a position command. With the feed-forward torque head
   // (tau_ff in the URDF) it takes an effort command as well, and then every
@@ -413,7 +421,7 @@ void MujocoHardwareInterface::publishGroundTruth(const rclcpp::Duration & period
   geometry_msgs::msg::TransformStamped tf;
   tf.header.stamp = stamp;
   tf.header.frame_id = "odom";
-  tf.child_frame_id = "base_link";
+  tf.child_frame_id = ground_truth_child_frame_;
   tf.transform.translation.x = pose[0];
   tf.transform.translation.y = pose[1];
   tf.transform.translation.z = pose[2];

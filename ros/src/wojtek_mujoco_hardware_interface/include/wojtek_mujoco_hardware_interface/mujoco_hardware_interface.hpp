@@ -107,6 +107,7 @@ private:
   rclcpp::Publisher<std_msgs::msg::Float64MultiArray>::SharedPtr qpos_pub_;
   std_msgs::msg::Float64MultiArray qpos_msg_;
   double ground_truth_period_ = 0.01;
+  std::string ground_truth_child_frame_ = "base_link";
   double since_ground_truth_ = 0.0;
   double sim_time_at_window_ = 0.0;
   double wall_in_window_ = 0.0;

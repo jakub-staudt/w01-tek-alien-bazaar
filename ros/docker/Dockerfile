@@ -31,6 +31,8 @@ COPY ./src/wojtek_teleop/package.xml ./src/wojtek_teleop/package.xml
 COPY ./src/wojtek_deck/package.xml ./src/wojtek_deck/package.xml
 COPY ./src/magnetometer_broadcaster/package.xml ./src/magnetometer_broadcaster/package.xml
 COPY ./src/wojtek_perception_bringup/package.xml ./src/wojtek_perception_bringup/package.xml
+COPY ./src/wojtek_odometry/package.xml ./src/wojtek_odometry/package.xml
+COPY ./src/wojtek_nav/package.xml ./src/wojtek_nav/package.xml
 COPY ./src/wojtek_mujoco_hardware_interface/package.xml ./src/wojtek_mujoco_hardware_interface/package.xml
 COPY ./src/wojtek_benchmark/package.xml ./src/wojtek_benchmark/package.xml
 
@@ -83,7 +85,8 @@ RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
             imu_i2c_hardware_interface \
             wojtek_telemetry \
             wojtek_teleop wojtek_policy wojtek_bringup wojtek_pc magnetometer_broadcaster \
-            wojtek_perception_bringup wojtek_mujoco_hardware_interface \
+            wojtek_perception_bringup wojtek_odometry wojtek_nav \
+            wojtek_mujoco_hardware_interface \
             wojtek_benchmark wojtek_deck \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"
 

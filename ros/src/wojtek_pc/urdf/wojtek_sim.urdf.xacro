@@ -52,6 +52,11 @@
        with it, both sensor broadcasters). The policy then has no gravity or
        gyro, so this is a plumbing switch, not a way to walk. -->
   <xacro:arg name="use_imu" default="true" />
+  <!-- Frame the plant broadcasts the TRUE base pose as (odom->this). The
+       default makes the ground truth the odometry; leg_odom:=true in the
+       launch moves it to base_link_gt so leg_odometry can own
+       odom->base_link and the map inherits its honest drift. -->
+  <xacro:arg name="ground_truth_frame" default="base_link" />
 
   <!-- In sim the robot model owns the camera extrinsics (ground truth) -
        robot_state_publisher latches base_link->camera_link->optical frames
@@ -118,6 +123,7 @@
              said 0, the simulation exercised a compensation the robot did
              not need, and walked while the robot shook. -->
         <param name="imu_mount_rpy">0 0 0</param>
+        <param name="ground_truth_child_frame">$(arg ground_truth_frame)</param>
       </xacro:unless>
     </hardware>
 
