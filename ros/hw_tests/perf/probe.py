@@ -264,8 +264,13 @@ class Probe(Node):
         # rate, gaps and size of anything -- depth images, point clouds --
         # for the price of a copy.
         self.raw_bytes = {}
+        builtin = set(TOPICS) | ({CAMERA_TOPIC} if camera else set())
         for spec in extra_topics:
             name, _, type_name = spec.partition("=")
+            if name in builtin:
+                # Already timed below; a second subscription would count
+                # every message twice.
+                continue
             self.arrivals[name] = []
             self.latency_ms[name] = []
             self.raw_bytes[name] = []
@@ -384,6 +389,14 @@ def main():
     ap.add_argument("--settle", type=float, default=5.0,
                     help="seconds to let the stack settle before measuring")
     args = ap.parse_args()
+    for spec in args.topic:
+        name, _, type_name = spec.partition("=")
+        if not name.startswith("/") or "/" not in type_name:
+            ap.error(f"--topic wants /name=pkg/msg/Type, got '{spec}'")
+        try:
+            import_msg(type_name)
+        except (ImportError, AttributeError, ValueError) as e:
+            ap.error(f"--topic {spec}: cannot import {type_name} ({e})")
 
     rclpy.init()
     node = Probe(args.camera, args.topic)

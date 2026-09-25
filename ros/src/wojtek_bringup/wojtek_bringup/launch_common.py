@@ -83,6 +83,9 @@ def _launch_setup(context, with_rviz, hardware):
              f"{drive_torque:g}" if tau_ff_on else ""))
 
     use_imu = LaunchConfiguration("use_imu")
+    mock_hw = hardware == "real" and (
+        LaunchConfiguration("mock_hw").perform(context).lower() in ("true", "1")
+    )
     # The servo contract (gains, torque cap), the IMU switch and the bench flag
     # are the same question on both sides, so they go to both xacros. What
     # differs is what the plugin needs to reach its hardware: a CAN link and an
@@ -334,8 +337,12 @@ def _launch_setup(context, with_rviz, hardware):
                     ),
                     # The panel's restart button restarts this unit; the
                     # simulation has none, so there the button stays off.
+                    # So does a mock_hw stack (ros/hw_tests/perf): it does
+                    # not run in the boot service, and restarting that one
+                    # from here would start the real drivers next to it.
                     "stack_unit": (
-                        "wojtek-robot.service" if hardware == "real" else ""
+                        "wojtek-robot.service"
+                        if hardware == "real" and not mock_hw else ""
                     ),
                     # Frames a second the gateway passes on to the panel.
                     "stream_hz": ParameterValue(
@@ -347,10 +354,12 @@ def _launch_setup(context, with_rviz, hardware):
     )
 
     # The colour camera for the panel, on the robot only (the simulation
-    # renders its own). Colour alone, no depth, no point cloud, no sync:
+    # renders its own). Colour plus depth at the sensor's own 424x240 is
+    # the set measured safe on the Pi; no point cloud, no sync, no align:
     # the perception stack's d435.yaml turns those on together and the
     # RealSense node dies with SIGSEGV the moment the RGB sensor starts
-    # (see ros/deploy/deck/README.md). 640x480 rather than the sensor's
+    # (see ros/deploy/deck/README.md). The depth is the raw stream, without
+    # d435.yaml's preset and temporal filter. 640x480 rather than the sensor's
     # 1280x720 is the Pi's budget: at full size the camera node and the
     # gateway starved the control loop until the drives dropped to idle.
     # initial_reset: a D435 that comes up publishing nothing (seen after a

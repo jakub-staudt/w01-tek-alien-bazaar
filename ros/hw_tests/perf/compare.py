@@ -9,7 +9,9 @@ and policy rates, their worst gaps, policy inference time, the busiest
 core, the camera as the viewer saw it, temperature and throttling.
 """
 
+import argparse
 import json
+import os
 import sys
 
 
@@ -89,13 +91,28 @@ def isolated_irqs(report):
     return out
 
 
+def column_name(path):
+    """The file name carries the stamp and the label (perf.sh names results
+    <stamp>-<label>.json), which tells two runs of one scenario apart."""
+    return os.path.splitext(os.path.basename(path))[0]
+
+
 def main():
-    paths = sys.argv[1:]
-    if not paths:
-        print(__doc__)
-        return 1
-    reports = [json.load(open(p)) for p in paths]
-    names = [r.get("label") or p for r, p in zip(reports, paths)]
+    ap = argparse.ArgumentParser(
+        description=__doc__.split("\n\n")[0],
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="\n".join(__doc__.split("\n\n")[1:]),
+    )
+    ap.add_argument("paths", nargs="+", metavar="RESULT.json")
+    args = ap.parse_args()
+    reports = []
+    for p in args.paths:
+        try:
+            with open(p) as f:
+                reports.append(json.load(f))
+        except (OSError, ValueError) as e:
+            ap.error(f"{p}: {e}")
+    names = [column_name(p) for p in args.paths]
     width = max(len(r[0]) for r in ROWS) + 2
     col = max(12, *(len(n) + 2 for n in names))
     print("".ljust(width) + "".join(n.rjust(col) for n in names))
@@ -107,10 +124,13 @@ def main():
     for name, r in zip(names, reports):
         irqs = isolated_irqs(r)
         warns = get(r, "log", "warnings") or []
-        if irqs or warns or not r.get("stack_ready", True):
+        viewer_error = get(r, "viewer", "error")
+        if irqs or warns or viewer_error or not r.get("stack_ready", True):
             print(f"\n[{name}]")
             if not r.get("stack_ready", True):
                 print("  ! stack was not ready when the window started")
+            if viewer_error:
+                print(f"  ! viewer: {viewer_error}")
             for line in irqs:
                 print(f"  irq on isolated core  {line}")
             for w in warns[:6]:

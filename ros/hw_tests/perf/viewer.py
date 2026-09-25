@@ -34,22 +34,39 @@ def main():
                 print(json.dumps({"frames": 0, "fps": 0.0, "error": str(e)}))
                 return
             time.sleep(1.0)
-    t0 = time.monotonic()
+    # The window starts at the first frame, not at the connection: the
+    # camera may still be warming up behind a gateway that already answers,
+    # and a frameless head start would read as a slow stream. The wait for
+    # that first frame is bounded by the connect timeout.
+    t0 = None
+    first_deadline = time.monotonic() + args.connect_timeout
     try:
         with resp:
             tail = b""
-            while time.monotonic() - t0 < args.duration:
+            while True:
+                now = time.monotonic()
+                if t0 is None:
+                    if now >= first_deadline:
+                        error = "no frame arrived"
+                        break
+                elif now - t0 >= args.duration:
+                    break
                 chunk = resp.read1(65536)
                 if not chunk:
                     break
-                total += len(chunk)
                 buf = tail + chunk
                 now = time.monotonic()
-                arrivals.extend(now for _ in range(buf.count(SOI) - tail.count(SOI)))
+                new = buf.count(SOI) - tail.count(SOI)
+                if t0 is None and new:
+                    t0 = now
+                    # Bytes before the first frame are not the stream's.
+                    total = 0
+                total += len(chunk)
+                arrivals.extend(now for _ in range(new))
                 tail = buf[-1:]
     except OSError as e:
         error = str(e)
-    elapsed = max(time.monotonic() - t0, 1e-6)
+    elapsed = max(time.monotonic() - t0, 1e-6) if t0 is not None else 1e-6
     gaps = [(b - a) * 1e3 for a, b in zip(arrivals, arrivals[1:])]
     out = {
         "frames": len(arrivals),

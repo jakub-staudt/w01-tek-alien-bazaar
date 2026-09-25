@@ -173,7 +173,14 @@ TEST_F(Plant, servo_settings_from_the_policy_contract_reach_the_actuator)
 
   MujocoPlant stiff;
   stiff.load(writeModel(), "/nonexistent/meshes");
-  stiff.applyServoSettings("leg_third_joint", {200.0, 5.0, 20.0});
+  // Thirty times the soft gain, and a damping the 4 ms step can integrate:
+  // the actuator's velocity bias is explicit under MuJoCo's Euler, so
+  // kd*dt over the link's inertia (~0.0027 kg*m^2) must stay under 2. The
+  // old {200, 5} blew up numerically and settled farther out than the
+  // soft servo, which is what this test had been failing on.
+  stiff.applyServoSettings("leg_third_joint", {60.0, 1.0, 20.0});
+  // Same start as the soft plant: the keyframe.
+  stiff.reset("home");
   stiff.latchActivationPose();
   stiff.setCommand(0, 0.0);
   for (int i = 0; i < 2000; ++i) {stiff.advance(kControlPeriod);}
@@ -217,11 +224,26 @@ TEST_F(Plant, feed_forward_torque_stays_on_until_written_again)
   plant_.applyServoSettings("leg_third_joint", {2.0, 0.1, 6.0});
   plant_.latchActivationPose();
   plant_.setCommand(0, 0.0);
+  MujocoPlant bare;
+  bare.load(writeModel(), "/nonexistent/meshes");
+  bare.applyServoSettings("leg_third_joint", {2.0, 0.1, 6.0});
+  bare.latchActivationPose();
+  bare.setCommand(0, 0.0);
   plant_.setFeedForward(0, 1.0);
-  for (int i = 0; i < 400; ++i) {plant_.advance(kControlPeriod);}
-  const double early = plant_.jointPosition(0);
-  for (int i = 0; i < 400; ++i) {plant_.advance(kControlPeriod);}
-  EXPECT_GE(plant_.jointPosition(0), early - 0.01);
+  for (int i = 0; i < 400; ++i) {
+    plant_.advance(kControlPeriod);
+    bare.advance(kControlPeriod);
+  }
+  const double early = plant_.jointPosition(0) - bare.jointPosition(0);
+  for (int i = 0; i < 400; ++i) {
+    plant_.advance(kControlPeriod);
+    bare.advance(kControlPeriod);
+  }
+  const double late = plant_.jointPosition(0) - bare.jointPosition(0);
+  // The lift over a plant without the head is there in both windows: a
+  // one-shot torque would have let it decay back towards the bare plant.
+  EXPECT_GT(early, 0.05);
+  EXPECT_GE(late, early - 0.01);
 }
 
 TEST_F(Plant, dry_run_withholds_the_feed_forward_torque_too)
@@ -235,8 +257,11 @@ TEST_F(Plant, dry_run_withholds_the_feed_forward_torque_too)
 
   plant_.setDryRun(true);
   plant_.latchActivationPose();
-  plant_.setFeedForward(0, 5.0);
+  // Written before every advance, the way the driver's write() does it:
+  // a single write would be wiped by the dry-run advance before any step
+  // saw it, and the guard in setFeedForward would go untested.
   for (int i = 0; i < 400; ++i) {
+    plant_.setFeedForward(0, 5.0);
     plant_.advance(kControlPeriod);
     bare.advance(kControlPeriod);
   }

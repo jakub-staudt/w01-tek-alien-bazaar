@@ -60,9 +60,14 @@ RUN apt-get update && \
 
 # Python-only dependencies, in their own layer so a pip failure does not
 # throw away the apt/rosdep one above. huggingface_hub wants a newer idna
-# than Debian's, and pip cannot uninstall a Debian-installed package ("RECORD
-# file not found"): idna alone is installed over it. Not --ignore-installed
-# for the rest, which would shadow Debian's numpy that ROS is built against.
+# than Debian's, and pip cannot uninstall python3-idna ("RECORD file not
+# found"): idna alone is installed over it. Not --ignore-installed for the
+# rest, which would shadow Debian's numpy that ROS is built against. One
+# known overlap remains: mujoco wants websockets>=13 and pip does manage to
+# replace Debian's python3-websockets 10.4 (a rosdep of wojtek_pc), so dpkg
+# lists a package whose files are pip's 17.x; web_console runs on either.
+# The three are unpinned: a resolver change upstream shows up as a failed
+# pip layer, not a broken image.
 RUN pip3 install --break-system-packages --ignore-installed idna && \
     pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags
 

@@ -10,7 +10,7 @@ virtual camera, RViz, the operator console and optionally a gamepad.
                                        [telemetry:=true] [deck:=false]
 
 This is `robot.launch.py` with the hardware plugin swapped -- same
-controller_manager at 400 Hz, same broadcasters, same real_io_node, same
+controller_manager at 200 Hz, same broadcasters, same real_io_node, same
 policy_node parameters (see wojtek_bringup/launch_common.py, which both
 launches share). So the startup procedure is the robot's procedure:
 
