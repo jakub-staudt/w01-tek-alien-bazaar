@@ -34,3 +34,33 @@ from `viz.launch.py` in the dev container instead, on `ws://localhost:8765`.
 A recording covers all topics, so the same layout works on a bag afterwards.
 The service and `real.launch.py` record by default. A manual
 `robot.launch.py` run needs `bag:=true`.
+
+## `e2e.json`: the whole pipeline on one screen
+
+Robot model (3D), the colour and depth streams, the joint targets the
+policy sends next to the joint angles the drives report, the policy tick
+timing, CPU per core, the velocity command and the console. Made for
+checking a run end to end (simulation: `./ros/sim.sh`, then
+`ws://localhost:8765`). The image tiles read the raw topics the simulation
+publishes.
+
+`e2e-robot.json` is the same view for the robot (`ws://10.42.0.2:8765`): the
+colour tile reads the JPEG (`.../image_raw/compressed`). The robot's bridge
+does not offer the raw colour image at all: one panel on it pulled ~19 MB/s
+out of the Pi, saturated cores 0 and 1, and stretched the policy's output
+gaps from 23 to 111 ms.
+
+The depth tile maps millimetres 0..3000 through the turbo colour map; a
+16-bit depth image shown over its full 0..65535 range looks black. Black
+pixels in it are holes (0 = no depth), normal for a D435 at edges, shadows
+and shiny or dark surfaces.
+
+No console tile in the e2e layouts: the Wojtek console panel is an iframe,
+and Foxglove 3.x desktop serves every page under a Content-Security-Policy
+without `frame-src`, so `default-src 'self'` blocks any `http://` iframe and
+the tile stays empty. The diagnostics summary (controller manager, controllers,
+hardware components) takes its place; open the deck panel in a browser at
+`http://<robot>:8090`. (3.x also names an extension panel
+`<displayName>.<panel name>`, so the tile in `robot-dashboard.json`, written
+for 2.x as `machinekind.wojtek-console-panel.Wojtek console`, reports "Unknown
+panel type" there.)
