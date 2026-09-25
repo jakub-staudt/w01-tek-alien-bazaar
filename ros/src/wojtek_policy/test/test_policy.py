@@ -589,9 +589,22 @@ def test_default_cli_without_an_organization_fails(monkeypatch):
     assert policy_source.main(["--default"]) == 2
 
 
+def test_active_policy_prefers_the_environment(tmp_path, monkeypatch):
+    # The PC's way: WOJTEK_POLICY from the repo-root .env, over the override
+    # file and the pin alike.
+    monkeypatch.setenv("HF_ORGANIZATION", "org")
+    monkeypatch.setenv("WOJTEK_POLICY_STORE", str(tmp_path / "policies"))
+    (tmp_path / "policy_override").write_text(f"org/other@{SHA}\n")
+    monkeypatch.setenv("WOJTEK_POLICY", "org/from-env")
+    assert active_policy() == "org/from-env"
+    monkeypatch.setenv("WOJTEK_POLICY", "  ")   # blank is unset
+    assert active_policy() == f"org/other@{SHA}"
+
+
 def test_active_policy_prefers_the_override_file(tmp_path, monkeypatch):
     # This is a robot that deploy.sh --policy has visited. The override file
     # sits beside the store and it wins over the pin.
+    monkeypatch.delenv("WOJTEK_POLICY", raising=False)
     monkeypatch.setenv("HF_ORGANIZATION", "org")
     monkeypatch.setenv("WOJTEK_POLICY_STORE", str(tmp_path / "policies"))
     assert policy_source.policy_override_file() == tmp_path / "policy_override"
@@ -601,6 +614,7 @@ def test_active_policy_prefers_the_override_file(tmp_path, monkeypatch):
 
 def test_active_policy_without_an_override_is_the_pin(tmp_path, monkeypatch):
     # Every machine that never got --policy, the operator PC included.
+    monkeypatch.delenv("WOJTEK_POLICY", raising=False)
     monkeypatch.setenv("HF_ORGANIZATION", "org")
     monkeypatch.setenv("WOJTEK_POLICY_STORE", str(tmp_path / "policies"))
     assert active_policy() == default_policy()
@@ -608,6 +622,7 @@ def test_active_policy_without_an_override_is_the_pin(tmp_path, monkeypatch):
 
 def test_active_policy_ignores_an_empty_override(tmp_path, monkeypatch):
     # A blank file names no policy, so the pin still runs.
+    monkeypatch.delenv("WOJTEK_POLICY", raising=False)
     monkeypatch.setenv("HF_ORGANIZATION", "org")
     monkeypatch.setenv("WOJTEK_POLICY_STORE", str(tmp_path / "policies"))
     for text in ("", "\n", "   \n"):
