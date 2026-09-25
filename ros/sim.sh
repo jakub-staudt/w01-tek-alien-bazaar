@@ -173,24 +173,35 @@ for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL VLLM_API_KEY
   if [ -z "${!var:-}" ]; then
     for envfile in ../../.env ../.env; do
       [ -f "$envfile" ] || continue
-      val=$(grep -E "^${var}=" "$envfile" | tail -1 | cut -d= -f2- | tr -d '"'"'")
+      # `|| true`: a key absent from the file is the normal case, not an
+      # error for set -e/pipefail to kill the script on (it did, silently).
+      val=$({ grep -E "^${var}=" "$envfile" || true; } | tail -1 | cut -d= -f2- | tr -d '"'"'")
       if [ -n "$val" ]; then export "$var=$val"; break; fi
     done
   fi
+  # The training tools take a host path in WOJTEK_POLICY too (an export
+  # dir, a policy.npz); the container cannot see host paths, so only a
+  # Hugging Face reference (org/name[@rev]) goes in.
+  if [ "$var" = WOJTEK_POLICY ]; then case "${WOJTEK_POLICY:-}" in
+    /*|.*|~*) echo ">> WOJTEK_POLICY is a host path -- not forwarded; the launch runs the pin (or pass policy:=)"
+              unset WOJTEK_POLICY ;;
+  esac; fi
   [ -n "${!var:-}" ] && DOCKER_ENV+=(-e "$var=${!var}")
 done
 # A launch needs a policy from somewhere: an explicit policy:=, the override
 # file (ros/policy_override, one reference, the same file deploy.sh writes
 # on the robot), or the pin, which needs the org. Otherwise it stops at once
 # inside the container with "empty policy reference", so say it here.
-if [ -z "${HF_ORGANIZATION:-}" ] && [ ! -s ../policy_override ] \
+if [ -z "${HF_ORGANIZATION:-}" ] && [ -z "${WOJTEK_POLICY:-}" ] && [ ! -s ../policy_override ] \
    && ! printf '%s\n' ${EXTRA[@]+"${EXTRA[@]}"} | grep -q '^policy:='; then
-  echo "!! No policy: HF_ORGANIZATION is not set (host env or repo-root .env)," >&2
-  echo "!! ros/policy_override is absent, and no policy:= was given. The launch" >&2
-  echo "!! would stop at once. Set one of them (plus HF_TOKEN for a private repo)." >&2
+  echo "!! No policy: neither HF_ORGANIZATION nor WOJTEK_POLICY is set (host env or" >&2
+  echo "!! repo-root .env), ros/policy_override is absent, and no policy:= was given." >&2
+  echo "!! The launch would stop at once. Set one of them (plus HF_TOKEN for a private repo)." >&2
   exit 1
 fi
-if [ -s ../policy_override ]; then
+if [ -n "${WOJTEK_POLICY:-}" ]; then
+  echo ">> policy:   ${WOJTEK_POLICY} (WOJTEK_POLICY)"
+elif [ -s ../policy_override ]; then
   echo ">> policy:   $(head -1 ../policy_override) (ros/policy_override)"
 fi
 

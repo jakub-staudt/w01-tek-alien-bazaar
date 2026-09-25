@@ -70,6 +70,7 @@ class GotoNode(Node):
         self._grid = None
         self._last_status = None
         self._moving = False
+        self._cancelled_at = None   # node time of the last cancel
 
         latched = QoSProfile(
             depth=1, reliability=ReliabilityPolicy.RELIABLE,
@@ -90,6 +91,13 @@ class GotoNode(Node):
     # -- inputs ----------------------------------------------------------
 
     def _on_goal(self, msg):
+        # The resolver re-sends its setpoint on its own clock; one stamped
+        # before a cancel can land here after it (two subscribers, no
+        # ordering). Such a goal is the cancelled one and must not restart
+        # the robot. An unstamped goal means "now" and is taken.
+        stamp = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+        if self._cancelled_at is not None and 0.0 < stamp <= self._cancelled_at:
+            return
         try:
             if msg.header.frame_id and msg.header.frame_id != self._odom_frame:
                 # At the message's stamp (zero stamp = latest), so a goal
@@ -106,6 +114,7 @@ class GotoNode(Node):
     def _on_cancel(self, _msg):
         # The tick sees an idle controller next and, if the robot was
         # moving, sends the one zero Twist on that edge.
+        self._cancelled_at = self._now()
         self._ctrl.cancel()
 
     # -- the loop --------------------------------------------------------

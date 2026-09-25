@@ -207,7 +207,9 @@ cancels the task: the brain publishes `/wojtek/nav/cancel`
 drops its setpoint now (one zero Twist, then idle) rather than at its 3 s
 dead-man, the resolver stops re-sending (`cancelled`) -- and zeroes any
 turn of its own. The console's STOP sends the cancel directly as well, so
-it works with no brain running. A new instruction mid-task does the same
+it works with no brain running; and the brain reads that topic too, so a
+cancel from anywhere (a hand-typed `ros2 topic pub`) ends its task rather
+than being answered with a search turn. A new instruction mid-task does the same
 and then starts the new one (`replaced`). A model that cannot be reached
 or a camera that goes quiet ends the task with `error` in the status
 and the same halt, not a dead node.

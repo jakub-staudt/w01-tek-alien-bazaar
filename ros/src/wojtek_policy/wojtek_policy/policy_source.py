@@ -151,6 +151,10 @@ def resolve_policy(ref: str) -> ResolvedPolicy:
             "directory or a Hugging Face repo id (org/name[@revision])"
         )
     as_path = Path(ref).expanduser()
+    if as_path.is_file() and as_path.name == FILES[0]:
+        # The training tools name the policy by its npz (WOJTEK_POLICY);
+        # here that means the directory the pair sits in.
+        as_path = as_path.parent
     if as_path.is_dir():
         missing = [f for f in FILES if not (as_path / f).is_file()]
         if missing:

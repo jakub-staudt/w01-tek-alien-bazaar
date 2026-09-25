@@ -170,7 +170,10 @@ function connect() {
     else onMessage(JSON.parse(e.data));
   };
 }
-function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function send(obj) {
+  if (!(ws && ws.readyState === 1)) return false;
+  ws.send(JSON.stringify(obj)); return true;
+}
 function setStatus(text) { $("status").textContent = text; }
 
 function onMessage(m) {
@@ -373,12 +376,16 @@ let navWords = {goto: null, pixel: null};
 function sendInstruction() {
   const text = $("instr").value.trim();
   if (!text) return;
-  send({t: "vlm_instruction", text});
-  $("brainout").textContent = `sent: ${text}`;
+  $("brainout").textContent = send({t: "vlm_instruction", text})
+    ? `sent: ${text}` : "NOT sent -- console disconnected";
 }
 $("instrgo").onclick = sendInstruction;
 $("instr").onkeydown = e => { if (e.key === "Enter") sendInstruction(); };
-$("instrstop").onclick = () => { send({t: "vlm_stop"}); $("brainout").textContent = "STOP sent"; };
+// A stop the page could not deliver must never read as delivered.
+$("instrstop").onclick = () => {
+  $("brainout").textContent = send({t: "vlm_stop"})
+    ? "STOP sent" : "STOP NOT SENT -- console disconnected, use the pad or the robot";
+};
 function onVlm(s) {
   const out = $("brainout");
   if (!s) { out.textContent = "brain: (no status yet -- is vlm:=true up?)"; return; }

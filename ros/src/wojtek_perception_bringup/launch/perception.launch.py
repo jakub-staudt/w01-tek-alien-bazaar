@@ -73,7 +73,7 @@ def _setup(context, *args, **kwargs):
         # ~100 KB a frame at 1280x720 instead of the raw 2.7 MB. 80 is the
         # quality the deck's stream uses; the plugin's default 95 triples
         # the size for nothing a VLM can see.
-        ".camera.color.image_raw.compressed.jpeg_quality": 80,
+        f".{camera_name}.color.image_raw.compressed.jpeg_quality": 80,
     }
     for name, param in (
         ("depth_profile", "depth_module.depth_profile"),

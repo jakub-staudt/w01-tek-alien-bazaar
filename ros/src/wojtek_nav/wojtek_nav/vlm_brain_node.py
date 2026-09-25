@@ -19,6 +19,9 @@ Inputs
                           plugin, a robot without it).
   wojtek/nav/pixel_status, wojtek/nav/pixel_target, wojtek/nav/status
                           the resolver's and goto's answers, TF odom->base_link.
+  wojtek/nav/cancel       a cancel from anyone else (the console's STOP, a
+                          hand-typed one) ends the running task too; the
+                          brain must not answer a stopped goto with a turn.
 Outputs
   wojtek/nav/pixel_goal   the verified pixel (PointStamped, picture stamp).
   wojtek/nav/goal         straight approach/explore steps in base_link.
@@ -120,6 +123,8 @@ class VlmBrainNode(Node):
         self.create_subscription(PointStamped, "wojtek/nav/pixel_target",
                                  lambda m: setattr(self, "target", m), latched)
         self.create_subscription(String, "wojtek/vlm/instruction", self._on_instruction, 10)
+        self.create_subscription(Empty, "wojtek/nav/cancel", self._on_cancel, 10)
+        self._running = False
         self.pub_pixel = self.create_publisher(PointStamped, "wojtek/nav/pixel_goal", 10)
         self.pub_goal = self.create_publisher(PoseStamped, "wojtek/nav/goal", 10)
         self.pub_cancel = self.create_publisher(Empty, "wojtek/nav/cancel", 10)
@@ -138,6 +143,14 @@ class VlmBrainNode(Node):
     def _on_instruction(self, msg):
         text = msg.data.strip()
         self.new_instruction = "" if text.lower() in STOP_WORDS else text
+
+    def _on_cancel(self, _msg):
+        # Somebody stopped goto and the resolver: the task is over. Only
+        # while a task runs (an idle brain publishes its own cancel and
+        # must not chase its echo), and never over a pending instruction
+        # (a replacement's own cancel would otherwise wipe the new text).
+        if self._running and self.new_instruction is None:
+            self.new_instruction = ""
 
     def spin(self, seconds):
         end = time.time() + seconds
@@ -276,6 +289,10 @@ class VlmBrainNode(Node):
         m = PointStamped()
         m.header = frame.header
         m.point.x, m.point.y, m.point.z = float(point[0]), float(point[1]), 0.0
+        # A stop that landed during the model call is still unread (no spin
+        # happens inside ask()); read it before anything goes out.
+        self.spin(0.05)
+        self.check_interrupt()
         self.pixel_status = None
         self.target = None
         self.pub_pixel.publish(m)
@@ -297,8 +314,12 @@ class VlmBrainNode(Node):
         t_start = time.time()
         action = ("look",)
         frame = None
+        self._running = True
         try:
             while time.time() - t_start < self._g("max_s"):
+                # Deliver what arrived during a model call (ask() does not
+                # spin), then honour it before the next step moves anything.
+                self.spin(0.05)
                 self.check_interrupt()
                 kind = action[0]
                 if kind in Explorer.TERMINAL:
@@ -340,6 +361,8 @@ class VlmBrainNode(Node):
             self.halt()
             self.status(action="finished", result="error", error=f"{type(exc).__name__}: {exc}")
             return "error"
+        finally:
+            self._running = False
         self.status(action="finished", result="timeout")
         return "timeout"
 

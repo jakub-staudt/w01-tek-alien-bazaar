@@ -69,10 +69,13 @@ def generate_launch_description():
                 package="wojtek_nav",
                 executable="vlm_brain_node",
                 output="screen",
+                # Every string pinned as str: launch_ros YAML-parses bare
+                # values, so an all-digit api key or model tag would reach
+                # the node as an int and its declare_parameter would abort.
                 parameters=[{
-                    "url": LaunchConfiguration("url"),
-                    "model": LaunchConfiguration("model"),
-                    "api_key": LaunchConfiguration("api_key"),
+                    "url": ParameterValue(LaunchConfiguration("url"), value_type=str),
+                    "model": ParameterValue(LaunchConfiguration("model"), value_type=str),
+                    "api_key": ParameterValue(LaunchConfiguration("api_key"), value_type=str),
                     "instruction": ParameterValue(
                         LaunchConfiguration("instruction"), value_type=str
                     ),

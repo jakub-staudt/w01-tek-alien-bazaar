@@ -380,6 +380,15 @@ def test_resolve_local_dir(tmp_path):
     )
 
 
+def test_resolve_npz_path_means_its_directory(tmp_path):
+    # The training tools name a policy by its npz in WOJTEK_POLICY; the
+    # ROS resolver takes that form too, as the pair's directory.
+    make_policy(tmp_path)
+    r = resolve_policy(str(tmp_path / "policy.npz"))
+    assert r.npz == tmp_path / "policy.npz"
+    assert r.source == f"local:{tmp_path}"
+
+
 def test_resolve_local_dir_missing_files(tmp_path):
     with pytest.raises(FileNotFoundError, match="policy.npz"):
         resolve_policy(str(tmp_path))

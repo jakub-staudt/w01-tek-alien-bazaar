@@ -590,6 +590,14 @@ class Server:
                 return None
             status, ctype, body = self._http_answer(path)
             response = connection.respond(status, body.decode("utf-8"))
+            # respond() pre-sets text/plain, and this Headers type APPENDS
+            # on assignment rather than replacing: drop it first or the
+            # browser gets two Content-Type lines and may render the page
+            # as text.
+            try:
+                del response.headers["Content-Type"]
+            except KeyError:
+                pass
             response.headers["Content-Type"] = ctype
             response.headers["Cache-Control"] = "no-store"
             return response
