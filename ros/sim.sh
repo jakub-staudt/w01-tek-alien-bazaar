@@ -188,21 +188,22 @@ for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL VLLM_API_KEY
   esac; fi
   [ -n "${!var:-}" ] && DOCKER_ENV+=(-e "$var=${!var}")
 done
-# A launch needs a policy from somewhere: an explicit policy:=, the override
-# file (ros/policy_override, one reference, the same file deploy.sh writes
-# on the robot), or the pin, which needs the org. Otherwise it stops at once
-# inside the container with "empty policy reference", so say it here.
-if [ -z "${HF_ORGANIZATION:-}" ] && [ -z "${WOJTEK_POLICY:-}" ] && [ ! -s ../policy_override ] \
-   && ! printf '%s\n' ${EXTRA[@]+"${EXTRA[@]}"} | grep -q '^policy:='; then
+# A launch needs a policy from somewhere: an explicit policy:= (robot.py's
+# --policy becomes one), WOJTEK_POLICY, or the pin, which needs the org.
+# Otherwise it stops at once inside the container with "empty policy
+# reference", so say it here. (ros/policy_override is the robot's file,
+# written there by deploy.sh; the container mounts src, policies and
+# deck_assets only, so a copy on the host would not be seen and does not
+# count.)
+if [ -z "${HF_ORGANIZATION:-}" ] && [ -z "${WOJTEK_POLICY:-}" ] \
+   && ! printf '%s\n' ${EXTRA[@]+"${EXTRA[@]}"} | grep -qE '^(policy:=|--policy(=|$))'; then
   echo "!! No policy: neither HF_ORGANIZATION nor WOJTEK_POLICY is set (host env or" >&2
-  echo "!! repo-root .env), ros/policy_override is absent, and no policy:= was given." >&2
+  echo "!! repo-root .env) and no policy:= / --policy was given." >&2
   echo "!! The launch would stop at once. Set one of them (plus HF_TOKEN for a private repo)." >&2
   exit 1
 fi
 if [ -n "${WOJTEK_POLICY:-}" ]; then
   echo ">> policy:   ${WOJTEK_POLICY} (WOJTEK_POLICY)"
-elif [ -s ../policy_override ]; then
-  echo ">> policy:   $(head -1 ../policy_override) (ros/policy_override)"
 fi
 
 if [ "$VIZ" = auto ]; then

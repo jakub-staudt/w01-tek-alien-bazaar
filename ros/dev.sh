@@ -75,8 +75,10 @@ for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL VLLM_API_KEY
   esac; fi
   [ -n "${!var:-}" ] && DOCKER_ENV+=(-e "$var=${!var}")
 done
-if [ -z "${HF_ORGANIZATION:-}" ] && [ -z "${WOJTEK_POLICY:-}" ] && [ ! -s ../policy_override ]; then
-  echo "!! neither HF_ORGANIZATION nor WOJTEK_POLICY set (repo-root .env), no ros/policy_override: launches need an explicit policy:=" >&2
+# (ros/policy_override is the robot's file and is not mounted into the
+# container, so it does not count here.)
+if [ -z "${HF_ORGANIZATION:-}" ] && [ -z "${WOJTEK_POLICY:-}" ]; then
+  echo "!! neither HF_ORGANIZATION nor WOJTEK_POLICY set (repo-root .env): launches need an explicit policy:=" >&2
 fi
 
 exec docker exec -it ${DOCKER_ENV[@]+"${DOCKER_ENV[@]}"} wojtek_robot bash

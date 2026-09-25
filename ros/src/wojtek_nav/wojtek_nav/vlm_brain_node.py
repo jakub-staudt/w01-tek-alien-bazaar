@@ -125,6 +125,7 @@ class VlmBrainNode(Node):
         self.create_subscription(String, "wojtek/vlm/instruction", self._on_instruction, 10)
         self.create_subscription(Empty, "wojtek/nav/cancel", self._on_cancel, 10)
         self._running = False
+        self._halting = False         # halt() is publishing its own cancel
         self.pub_pixel = self.create_publisher(PointStamped, "wojtek/nav/pixel_goal", 10)
         self.pub_goal = self.create_publisher(PoseStamped, "wojtek/nav/goal", 10)
         self.pub_cancel = self.create_publisher(Empty, "wojtek/nav/cancel", 10)
@@ -147,9 +148,12 @@ class VlmBrainNode(Node):
     def _on_cancel(self, _msg):
         # Somebody stopped goto and the resolver: the task is over. Only
         # while a task runs (an idle brain publishes its own cancel and
-        # must not chase its echo), and never over a pending instruction
-        # (a replacement's own cancel would otherwise wipe the new text).
-        if self._running and self.new_instruction is None:
+        # must not chase its echo), never over a pending instruction (a
+        # replacement's own cancel would otherwise wipe the new text), and
+        # not while halt() is out: its cancel comes back on this very
+        # subscription, and taken for a stop it turned a task that ended
+        # in `error` into a latched `idle` 0.2 s later.
+        if self._running and not self._halting and self.new_instruction is None:
             self.new_instruction = ""
 
     def spin(self, seconds):
@@ -247,10 +251,16 @@ class VlmBrainNode(Node):
 
     def halt(self):
         """Stop everything this brain set in motion: the goal at goto and
-        the resolver (one cancel), and a turn of our own (one zero)."""
-        self.pub_cancel.publish(Empty())
-        self.pub_cmd.publish(Twist())
-        self.spin(0.3)
+        the resolver (one cancel), and a turn of our own (one zero). The
+        task is over by the time this is called, so the cancel's echo on
+        our own subscription is not a new stop (_on_cancel)."""
+        self._halting = True
+        try:
+            self.pub_cancel.publish(Empty())
+            self.pub_cmd.publish(Twist())
+            self.spin(0.3)
+        finally:
+            self._halting = False
 
     def turn(self, deg):
         tw = Twist()
