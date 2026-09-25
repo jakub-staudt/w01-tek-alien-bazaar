@@ -31,6 +31,8 @@ COPY ./src/wojtek_teleop/package.xml ./src/wojtek_teleop/package.xml
 COPY ./src/wojtek_deck/package.xml ./src/wojtek_deck/package.xml
 COPY ./src/magnetometer_broadcaster/package.xml ./src/magnetometer_broadcaster/package.xml
 COPY ./src/wojtek_perception_bringup/package.xml ./src/wojtek_perception_bringup/package.xml
+COPY ./src/wojtek_odometry/package.xml ./src/wojtek_odometry/package.xml
+COPY ./src/wojtek_nav/package.xml ./src/wojtek_nav/package.xml
 COPY ./src/wojtek_mujoco_hardware_interface/package.xml ./src/wojtek_mujoco_hardware_interface/package.xml
 COPY ./src/wojtek_benchmark/package.xml ./src/wojtek_benchmark/package.xml
 
@@ -55,6 +57,11 @@ RUN apt-get update && \
     (rosdep init || true) && \
     rosdep update --rosdistro "$ROS_DISTRO" && \
     rosdep install --from-paths src -y -i && \
+    # pip refuses to replace Debian's idna (no RECORD file) when a wheel
+    # below asks for a newer one, and aborts the whole install; putting a
+    # pip-owned idna in first ends that. Seen on a fresh ros:jazzy-ros-core
+    # on 2026-09-25 (the experiment images work around it with a venv).
+    pip3 install --break-system-packages --ignore-installed idna && \
     pip3 install --break-system-packages mujoco huggingface_hub pupil-apriltags && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -71,7 +78,8 @@ RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash && \
             imu_i2c_hardware_interface \
             wojtek_telemetry \
             wojtek_teleop wojtek_policy wojtek_bringup wojtek_pc magnetometer_broadcaster \
-            wojtek_perception_bringup wojtek_mujoco_hardware_interface \
+            wojtek_perception_bringup wojtek_odometry wojtek_nav \
+            wojtek_mujoco_hardware_interface \
             wojtek_benchmark wojtek_deck \
         --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF"
 
