@@ -60,6 +60,7 @@ def _context(hardware, **overrides):
         "foxglove": "false", "foxglove_cpus": "",
         "deck": "false", "deck_port": "8090", "deck_cpus": "",
         "deck_camera": "false", "deck_camera_profile": "640x480x30",
+        "deck_camera_depth": "true", "deck_camera_depth_profile": "424x240x15",
         "deck_stream_hz": "30.0",
         # Core pinning, empty = no taskset (the sim's default).
         "control_cpus": "", "policy_cpus": "", "ui_cpus": "",
@@ -67,6 +68,9 @@ def _context(hardware, **overrides):
     if hardware == "real":
         defaults.update({
             "leg_odom": "true",
+            # The real drives and IMU, not ros2_control's GenericSystem
+            # (mock_hw:=true is the perf harness's stand-in).
+            "mock_hw": "false",
             "bus": "spi", "can_baud": "8",
             "imu_bus": "/dev/i2c-1",
             "imu_addr_ag": "0x6A", "imu_addr_mag": "0x1C",

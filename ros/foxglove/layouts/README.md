@@ -72,3 +72,16 @@ hardware components) takes its place; open the deck panel in a browser at
 `<displayName>.<panel name>`, so the tile in `robot-dashboard.json`, written
 for 2.x as `machinekind.wojtek-console-panel.Wojtek console`, reports "Unknown
 panel type" there.)
+
+## `nav-sim.json`: the navigation session
+
+The view for `sim.launch.py model_xml:=scene_nav.xml leg_odom:=true
+nav:=true` (see `wojtek_nav/README.md`). The world itself is not a topic:
+the simulator publishes only what the camera sees, so the 3D tile shows the
+environment through `/wojtek/nav/points` (the decimated depth cloud) and
+`/wojtek/nav/costmap` (the rolling 6 x 6 m window) around the robot model,
+with the goto setpoint (`/wojtek/nav/goal`) and the resolved object point.
+The TF axes are scaled down so they do not hide the cloud. Beside it: the
+colour image the VLM sees, `/wojtek/vlm/annotated` with the model's point
+drawn on it, the depth image, `/cmd_vel`, and the goto and brain status
+strings. Import it the same way as the others; it needs no extension.
