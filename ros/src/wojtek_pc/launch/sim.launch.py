@@ -106,10 +106,6 @@ from launch_ros.substitutions import FindPackageShare
 
 from wojtek_bringup.launch_common import common_launch_description, resolve_scene
 
-# The brain's defaults live with the brain; the sim only forwards them.
-VLM_DEFAULT_URL = "http://127.0.0.1:11434/v1"
-VLM_DEFAULT_MODEL = "qwen3-vl:30b-a3b-instruct"
-
 
 def _camera_node(context):
     return [
@@ -201,13 +197,15 @@ def generate_launch_description():
         # The VLM brain (wojtek_nav), opt-in: it needs nav:=true underneath
         # (goto + the pixel resolver) and a model server to talk to.
         DeclareLaunchArgument("vlm", default_value="false"),
+        # VLM_URL / VLM_MODEL from the environment, else empty: the brain's
+        # defaults live with the brain (wojtek_nav.vlm_brain), and its node
+        # takes an empty url or model as "the default", so nothing is
+        # duplicated here.
         DeclareLaunchArgument(
-            "vlm_url",
-            default_value=EnvironmentVariable("VLM_URL", default_value=VLM_DEFAULT_URL),
+            "vlm_url", default_value=EnvironmentVariable("VLM_URL", default_value=""),
         ),
         DeclareLaunchArgument(
-            "vlm_model",
-            default_value=EnvironmentVariable("VLM_MODEL", default_value=VLM_DEFAULT_MODEL),
+            "vlm_model", default_value=EnvironmentVariable("VLM_MODEL", default_value=""),
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution(

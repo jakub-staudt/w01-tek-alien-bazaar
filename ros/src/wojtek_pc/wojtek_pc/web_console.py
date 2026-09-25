@@ -500,8 +500,9 @@ class Server:
             if command:
                 self.node.publish_nav(command)
         elif t == "vlm_instruction":
-            # The brain's task. Published as typed: the brain treats an
-            # empty string as a stop, so an empty box is the stop button.
+            # The brain's task, published as typed. The page never sends an
+            # empty text here (its go button ignores an empty box; STOP is
+            # the branch below), and the brain would take one as a stop.
             self.node.publish_instruction(str(msg.get("text", "")).strip())
         elif t == "vlm_stop":
             # Both halves, on purpose: the brain halts (and cancels what it
