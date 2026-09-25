@@ -45,6 +45,13 @@ from launch_ros.substitutions import FindPackageShare
 
 from wojtek_policy.policy_source import active_policy, load_policy
 
+# The IMU's rotation in base_link, a copy of body.urdf.xacro's imu_joint rpy:
+# upright, yawed -90 deg (chip +y forward, +x right). Every node that reads
+# the sensor's axes gets it from here, and the simulator emulates the same
+# mount (wojtek_sim.urdf.xacro), so the value is exercised in the sim too.
+# The copy drifting from the URDF is what fed v41 an upside-down gravity.
+IMU_MOUNT_RPY = [0.0, 0.0, -1.5707963]
+
 
 def resolve_scene(model_xml):
     """The MuJoCo scene file a simulation loads, from the model_xml argument.
@@ -250,7 +257,11 @@ def _launch_setup(context, with_rviz, hardware):
             # (joint_state_broadcaster's rate), and the per-message
             # kinematics costs ~6 ms on the robot's A72 -- 25 Hz processing
             # fits the core budget; full rate does not (see the node).
-            parameters=[{"publish_tf": True, "input_stride": 2}],
+            parameters=[{
+                "publish_tf": True,
+                "input_stride": 2,
+                "imu_mount_rpy": IMU_MOUNT_RPY,
+            }],
             condition=IfCondition(use_imu),
         ) if leg_odom else None,
         Node(
@@ -280,13 +291,9 @@ def _launch_setup(context, with_rviz, hardware):
                     # loads the same files without resolving the ref again.
                     "policy": str(loaded.directory),
                     "policy_source": loaded.source,
-                    # URDF imu_joint: rpy 0 0 0 relative to base_link -- the
-                    # sensor sits upright and its driver publishes the chip
-                    # axes unmodified, so nothing needs rotating here. Keep
-                    # this equal to body.urdf.xacro's imu_joint: the value is
-                    # a copy, not derived, and the two drifting apart is what
-                    # fed v41 an upside-down gravity vector.
-                    "imu_mount_rpy": [0.0, 0.0, 0.0],
+                    # The driver publishes the chip axes unmodified; this
+                    # rotates them into base_link (see IMU_MOUNT_RPY).
+                    "imu_mount_rpy": IMU_MOUNT_RPY,
                     "auto_enable": True,  # real_io arming is the gate
                     "soft_start_s": 2.0,
                     "clamp_knee": True,
@@ -653,6 +660,9 @@ def common_launch_description(
             # on the isolated RT cores with no load balancing they shared
             # one core with policy_node and real_io and took a fifth of it.
             DeclareLaunchArgument("gamepad_cpus", default_value=""),
+            # Fraction of the command box full stick reaches; 1.0 = the
+            # policy's trained top speed, far too fast indoors.
+            DeclareLaunchArgument("gamepad_speed", default_value="0.4"),
             IncludeLaunchDescription(
                 PathJoinSubstitution(
                     [
@@ -663,6 +673,7 @@ def common_launch_description(
                 ),
                 launch_arguments={
                     "cpus": LaunchConfiguration("gamepad_cpus"),
+                    "speed_scale": LaunchConfiguration("gamepad_speed"),
                 }.items(),
                 condition=IfCondition(LaunchConfiguration("gamepad")),
             ),
