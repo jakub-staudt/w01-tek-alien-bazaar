@@ -24,4 +24,6 @@ tracking.
 - Networking the joystick output to the robot (planned: a
   `wojtek_spectacles_bridge` ROS 2 node in this repo,
   receiving commands over WebSocket and publishing `/cmd_vel`).
-- Tap-to-select-object navigation.
+- Tap-to-select-object navigation (planned: a tapped pixel goes to
+  `wojtek_nav`'s pixel resolver on `/wojtek/nav/pixel_goal`, which turns it
+  into a setpoint for `goto`).
