@@ -277,6 +277,14 @@ def _launch_setup(context, with_rviz, hardware):
                 {
                     "dry_run": LaunchConfiguration("dry_run"),
                     "boot_pose": LaunchConfiguration("boot_pose"),
+                    # The arm check compares the pose against the policy's
+                    # home. On the robot 0.15 rad (the node's default) is
+                    # the safety margin. The simulated plant holds nothing
+                    # while disarmed and sags 0.22-0.28 rad from stand_up,
+                    # so with the robot's limit `zero -> stand_up -> arm`
+                    # never arms in the sim (seen by every E2E harness so
+                    # far, each raising it at runtime). Sim only.
+                    **({"max_arm_jump_rad": 0.35} if hardware == "sim" else {}),
                 }
             ],
         ),

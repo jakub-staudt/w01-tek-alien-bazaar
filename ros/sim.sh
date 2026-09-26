@@ -161,33 +161,12 @@ elif [ -n "${DISPLAY:-}" ]; then
   HAVE_X=true
 fi
 
-# Personal values the session needs inside the container, from the host
-# environment or else the gitignored repo-root .env (see .env.example):
-# HF_ORGANIZATION names the keeper org of the pinned default policy --
-# without it the launch dies at once with "empty policy reference" --
-# HF_TOKEN downloads it, VLM_URL / VLM_MODEL point the VLM brain
-# (vlm:=true) at the Ollama server. Read by name, not sourced, so nothing
-# else in .env leaks into the container. `docker exec` passes no host
-# environment on its own, which is why this is here.
-for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL; do
-  if [ -z "${!var:-}" ]; then
-    for envfile in ../../.env ../.env; do
-      [ -f "$envfile" ] || continue
-      # `|| true`: a key absent from the file is the normal case, not an
-      # error for set -e/pipefail to kill the script on (it did, silently).
-      val=$({ grep -E "^${var}=" "$envfile" || true; } | tail -1 | cut -d= -f2- | tr -d '"'"'")
-      if [ -n "$val" ]; then export "$var=$val"; break; fi
-    done
-  fi
-  # The training tools take a host path in WOJTEK_POLICY too (an export
-  # dir, a policy.npz); the container cannot see host paths, so only a
-  # Hugging Face reference (org/name[@rev]) goes in.
-  if [ "$var" = WOJTEK_POLICY ]; then case "${WOJTEK_POLICY:-}" in
-    /*|.*|~*) echo ">> WOJTEK_POLICY is a host path -- not forwarded; the launch runs the pin (or pass policy:=)"
-              unset WOJTEK_POLICY ;;
-  esac; fi
-  [ -n "${!var:-}" ] && DOCKER_ENV+=(-e "$var=${!var}")
-done
+# Personal values the session needs inside the container (HF_ORGANIZATION
+# -- without it the launch dies at once with "empty policy reference" --
+# HF_TOKEN, WOJTEK_POLICY, the VLM brain's VLM_URL / VLM_MODEL,
+# ROS_LOCALHOST_ONLY for a headless box), from the host environment or the
+# gitignored repo-root .env: forward_env.sh appends them to DOCKER_ENV.
+. ./forward_env.sh
 # A launch needs a policy from somewhere: an explicit policy:= (robot.py's
 # --policy becomes one), WOJTEK_POLICY, or the pin, which needs the org.
 # Otherwise it stops at once inside the container with "empty policy

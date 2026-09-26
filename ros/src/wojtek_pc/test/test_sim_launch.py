@@ -105,7 +105,13 @@ def test_control_parameters_are_identical_in_sim_and_real(executable):
     """The parameters that decide how the robot behaves must not depend on
     which plant is underneath. A deliberate exception belongs in this list,
     with the reason -- an empty list is the goal."""
-    allowed_to_differ = set()
+    allowed_to_differ = {
+        # real_io's arm check: 0.15 rad on the robot (the node's default,
+        # not set by the launch), 0.35 rad in the sim, where the plant holds
+        # nothing while disarmed and sags 0.22-0.28 rad from stand_up, so
+        # the robot's margin never let `zero -> stand_up -> arm` arm there.
+        "max_arm_jump_rad",
+    }
 
     ctx_real, real = _nodes("real")
     ctx_sim, sim = _nodes("sim")
