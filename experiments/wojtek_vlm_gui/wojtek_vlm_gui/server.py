@@ -11,7 +11,10 @@ so a slow browser drops frames instead of lagging behind the robot.
 
 What the page may do on the robot is what the operator page always did:
 the instruction and the cancel (BrainClient), the four operator services
-(arm_switch). Disarm and Lie down also STOP the brain.
+(arm_switch). Disarm and Lie down also STOP the brain. STOP itself freezes
+the robot (BrainClient.freeze: cancel, then /cmd_vel held at zero) and is
+handled the moment it arrives: every other command runs as its own task, so
+a STOP never waits behind a slow service call or a task send.
 """
 
 from __future__ import annotations
@@ -72,10 +75,9 @@ def make_app(client: BrainClient) -> Starlette:
 
     async def run_command(cmd) -> dict:
         """Blocking ROS calls (a subscriber wait, a service round trip) go
-        to a worker thread so the event loop keeps streaming frames."""
-        if cmd["t"] == "stop":
-            ok, text = await asyncio.to_thread(client.stop)
-        elif cmd["t"] == "task":
+        to a worker thread so the event loop keeps streaming frames. STOP
+        never gets here: ws_endpoint answers it inline (see there)."""
+        if cmd["t"] == "task":
             ok, text = await asyncio.to_thread(client.send, cmd["text"])
         else:
             call, stops_brain = SERVICE_CALLS[cmd["name"]]
@@ -125,18 +127,38 @@ def make_app(client: BrainClient) -> Starlette:
                 next_sys = loop.time() + SYS_EVERY_S
             await asyncio.sleep(SEND_TICK_S)
 
+    async def answer(ws: WebSocket, cmd) -> None:
+        reply = await run_command(cmd)
+        try:
+            await ws.send_text(json.dumps(reply))
+        except (WebSocketDisconnect, RuntimeError):
+            pass   # the page went away while the call ran; the call itself happened
+
     async def ws_endpoint(ws: WebSocket) -> None:
         await ws.accept()
         send_task = asyncio.create_task(sender(ws))
+        running = set()
         try:
             while True:
                 cmd = wire.parse_command(await ws.receive_text())
-                if cmd is not None:
-                    await ws.send_text(json.dumps(await run_command(cmd)))
+                if cmd is None:
+                    continue
+                if wire.is_urgent(cmd):
+                    # Inline and first: freeze() only publishes and starts
+                    # its hold thread, it never blocks the loop. An Arm or a
+                    # task still waiting on the robot does not delay it.
+                    ok, text = client.freeze()
+                    await ws.send_text(json.dumps(wire.reply_message(ok, text)))
+                    continue
+                task = asyncio.create_task(answer(ws, cmd))
+                running.add(task)
+                task.add_done_callback(running.discard)
         except (WebSocketDisconnect, RuntimeError):
             pass
         finally:
             send_task.cancel()
+            for task in running:
+                task.cancel()
 
     return Starlette(routes=[
         Route("/", index),

@@ -23,11 +23,58 @@ the same rule the robot applies.
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 STALE_S = 0.5
 STILL = 1e-3            # m/s or rad/s below which an axis counts as still
+GUARD_LISTEN_S = 2.0    # how long the walker listens on /tf before it publishes
+
+
+class TfGuard:
+    """Never a second publisher of odom -> base_link.
+
+    The walker broadcasts that transform; so does the robot's leg odometry
+    (on in the drop-in since fork PR #14) and the simulator. Two sources of
+    one transform make goto and the pixel resolver read a pose that jumps
+    between them. The guard tells the walker's own broadcasts from anyone
+    else's by their stamps: every stamp the walker sends is remembered, and
+    an odom -> base_link seen on /tf with a stamp it never sent is foreign.
+    Once foreign, always foreign for this run: the walker stops
+    broadcasting and says so, it does not try to take the frame back.
+
+    Pure: the node feeds it stamps in nanoseconds.
+    """
+
+    def __init__(self, listen_s: float = GUARD_LISTEN_S, keep: int = 400) -> None:
+        self.listen_s = float(listen_s)
+        self._mine: deque = deque(maxlen=keep)
+        self._mine_set: set = set()
+        self._started: Optional[float] = None
+        self.foreign = False
+
+    def start(self, now: float) -> None:
+        self._started = float(now)
+
+    def may_broadcast(self, now: float) -> bool:
+        """False while listening (the first listen_s after start) and for
+        good once another publisher was seen."""
+        if self.foreign or self._started is None:
+            return False
+        return now - self._started >= self.listen_s
+
+    def sent(self, stamp_ns: int) -> None:
+        if len(self._mine) == self._mine.maxlen:
+            self._mine_set.discard(self._mine[0])
+        self._mine.append(int(stamp_ns))
+        self._mine_set.add(int(stamp_ns))
+
+    def seen(self, stamp_ns: int) -> bool:
+        """An odom -> base_link on /tf; True (and latched) when it is not ours."""
+        if int(stamp_ns) not in self._mine_set:
+            self.foreign = True
+        return self.foreign
 
 
 @dataclass

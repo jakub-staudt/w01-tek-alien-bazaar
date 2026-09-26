@@ -19,6 +19,8 @@ Server -> page:
 
 Page -> server: text frames only, validated by `parse_command`:
   {"t": "task", "text"} | {"t": "stop"} | {"t": "svc", "name": one of SERVICES}
+  "stop" freezes the robot (the brain and goto cancelled, /cmd_vel held at
+  zero) and is `is_urgent`: the server answers it before anything queued.
 """
 
 from __future__ import annotations
@@ -90,6 +92,12 @@ def guide_message(data: Dict[str, Any]) -> Dict[str, Any]:
 
 def reply_message(ok: bool, text: str) -> Dict[str, Any]:
     return {"t": "reply", "ok": bool(ok), "text": str(text)}
+
+
+def is_urgent(cmd: Dict[str, Any]) -> bool:
+    """A command the server must act on the moment it arrives, ahead of
+    anything still running: STOP, and nothing else."""
+    return cmd.get("t") == "stop"
 
 
 def parse_command(text: str) -> Optional[Dict[str, Any]]:
