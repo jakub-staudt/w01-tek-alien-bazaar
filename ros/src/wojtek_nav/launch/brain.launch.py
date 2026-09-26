@@ -1,6 +1,6 @@
 """The VLM brain, as a launch: one node, its endpoint and its camera named once.
 
-    ros2 launch wojtek_nav brain.launch.py url:=http://<vlm host>:8000
+    ros2 launch wojtek_nav brain.launch.py url:=http://<ollama host>:11434
     ros2 launch wojtek_nav brain.launch.py url:=... instruction:="podejdź do fioletowego słupa"
     ros2 launch wojtek_nav brain.launch.py --show-args
 
@@ -12,9 +12,9 @@ model -- the PC, not the RPi -- and takes the camera's own JPEG
 (<image_topic>/compressed) so what crosses the robot's wifi is tens of
 kilobytes a frame, not the raw image's megabytes.
 
-`url` is the model server's base URL, with or without /v1. The default
-model is Qwen3-VL-8B-Instruct on vLLM (scripts/serve_vlm.sh starts one);
-the environment's VLM_URL (see .env.example) is the usual source of `url`.
+`url` is the Ollama server's base URL, with or without /v1; the model is
+qwen3-vl:30b-a3b-instruct. The environment's VLM_URL and VLM_MODEL (see
+.env.example) are the usual source of both.
 """
 
 from launch import LaunchDescription
@@ -32,21 +32,15 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "url",
                 default_value=EnvironmentVariable("VLM_URL", default_value=DEFAULT_URL),
-                description="Base URL of the OpenAI-compatible model server "
-                            "(vLLM/Ollama); VLM_URL from the environment "
+                description="Base URL of the Ollama server (OpenAI-"
+                            "compatible); VLM_URL from the environment "
                             "when set.",
             ),
             DeclareLaunchArgument(
                 "model",
                 default_value=EnvironmentVariable("VLM_MODEL", default_value=DEFAULT_MODEL),
-                description="Model name as the server knows it (a vLLM "
-                            "--served-model-name, an Ollama tag); VLM_MODEL "
-                            "from the environment when set.",
-            ),
-            DeclareLaunchArgument(
-                "api_key",
-                default_value=EnvironmentVariable("VLLM_API_KEY", default_value="EMPTY"),
-                description="Bearer token for the server, if it wants one.",
+                description="Ollama model tag; VLM_MODEL from the "
+                            "environment when set.",
             ),
             DeclareLaunchArgument(
                 "instruction", default_value="",
@@ -70,12 +64,11 @@ def generate_launch_description():
                 executable="vlm_brain_node",
                 output="screen",
                 # Every string pinned as str: launch_ros YAML-parses bare
-                # values, so an all-digit api key or model tag would reach
+                # values, so an all-digit model tag would reach
                 # the node as an int and its declare_parameter would abort.
                 parameters=[{
                     "url": ParameterValue(LaunchConfiguration("url"), value_type=str),
                     "model": ParameterValue(LaunchConfiguration("model"), value_type=str),
-                    "api_key": ParameterValue(LaunchConfiguration("api_key"), value_type=str),
                     "instruction": ParameterValue(
                         LaunchConfiguration("instruction"), value_type=str
                     ),

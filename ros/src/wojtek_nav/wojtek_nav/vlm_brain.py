@@ -19,7 +19,7 @@ goal*:
                then look again; approach blocked ──► search
              ──blocked──► search
 
-The benchmark behind these choices (qwen3-vl 30B-A3B / 8B on nine sim
+The benchmark behind these choices (scripts/point_bench.py on nine sim
 frames): pointing is fine, hallucinated goals on absent objects are the
 failure to design against, and a thin target never "fills the view", so
 `done` comes from the resolved target's distance, not from the model.
@@ -28,12 +28,10 @@ failure to design against, and a thin target never "fills the view", so
 import json
 import math
 
-# Where the node looks by default: a vLLM on the local machine (or the
-# VLM_URL the launch reads from the environment) serving the 8B, the size
-# the pointing benchmark found as accurate as the 30B-A3B and less prone
-# to inventing objects (scripts/point_bench.py, 2026-09-25).
-DEFAULT_URL = "http://127.0.0.1:8000/v1"
-DEFAULT_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+# Where the node looks by default: Ollama on the local machine (or the
+# VLM_URL the launch reads from the environment) serving Qwen3-VL 30B-A3B.
+DEFAULT_URL = "http://127.0.0.1:11434/v1"
+DEFAULT_MODEL = "qwen3-vl:30b-a3b-instruct"
 
 SYSTEM = (
     "You are the navigation brain of a small quadruped robot. You see one photo "
@@ -91,7 +89,7 @@ def verify_prompt(instruction, label):
 
 def chat_url(base):
     """The chat-completions endpoint from however the server was named:
-    `http://host:8000`, `http://host:8000/v1` and a trailing slash all
+    `http://host:11434`, `http://host:11434/v1` and a trailing slash all
     land on `.../v1/chat/completions` (VLM_URL in .env is a base URL)."""
     base = base.strip().rstrip("/")
     if not base.endswith("/v1"):

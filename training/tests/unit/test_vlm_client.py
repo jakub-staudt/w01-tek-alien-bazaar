@@ -1,4 +1,4 @@
-"""Unit tests for the OpenAI-chat-completions VLM backend.
+"""Unit tests for the VLM client (Ollama, OpenAI chat-completions API).
 
 Pure offline: httpx.AsyncClient.post is monkeypatched, no network touched.
 Async code runs via asyncio.run(), matching tests/test_vlm_nav.py.
@@ -8,13 +8,19 @@ import asyncio
 
 import pytest
 
-# httpx ships with the `eval` extra, not the default install. Skip rather
+# httpx ships with the `demo`/`eval` extras, not the default install. Skip rather
 # than error out on collection, so a missing optional dep cannot break the
 # fast unit suite for everyone.
 httpx = pytest.importorskip("httpx")
 
 from wojtek_eval.navigator import EVAL_ACTIONS  # noqa: E402
-from wojtek_eval.vlm_openai import OpenAIVlmClient, parse_decision  # noqa: E402
+from wojtek_rl.vlm_client import (  # noqa: E402
+    DEFAULT_VLM_MODEL,
+    DEFAULT_VLM_URL,
+    OpenAIVlmClient,
+    parse_decision,
+)
+from wojtek_rl.vlm_nav import ACTIONS, SYSTEM_PROMPT  # noqa: E402
 
 POSE = (0.0, 0.0, 0.0)
 
@@ -100,18 +106,18 @@ def test_explore_action_parses_with_amount_none():
 
 
 def test_base_url_normalization_appends_v1():
-    c = OpenAIVlmClient(base_url="http://localhost:8000", model="qwen")
-    assert c.base_url == "http://localhost:8000/v1"
+    c = OpenAIVlmClient(base_url="http://localhost:11434", model="qwen3-vl:30b-a3b-instruct")
+    assert c.base_url == "http://localhost:11434/v1"
 
 
 def test_base_url_normalization_leaves_v1_alone():
-    c = OpenAIVlmClient(base_url="http://localhost:8000/v1", model="qwen")
-    assert c.base_url == "http://localhost:8000/v1"
+    c = OpenAIVlmClient(base_url="http://localhost:11434/v1", model="qwen3-vl:30b-a3b-instruct")
+    assert c.base_url == "http://localhost:11434/v1"
 
 
 def test_base_url_normalization_strips_trailing_slash():
-    c = OpenAIVlmClient(base_url="http://localhost:8000/v1/", model="qwen")
-    assert c.base_url == "http://localhost:8000/v1"
+    c = OpenAIVlmClient(base_url="http://localhost:11434/v1/", model="qwen3-vl:30b-a3b-instruct")
+    assert c.base_url == "http://localhost:11434/v1"
 
 
 # --- decide() -------------------------------------------------------------------
@@ -139,7 +145,7 @@ def test_decide_success_returns_vlm_decision(monkeypatch):
     response = httpx.Response(200, json=body)
     _install_fake_post(monkeypatch, response)
 
-    client = OpenAIVlmClient(base_url="http://localhost:8000", model="qwen-vl")
+    client = OpenAIVlmClient(base_url="http://localhost:11434", model="qwen3-vl:30b-a3b-instruct")
     decision = asyncio.run(client.decide("go to the bed", "abc123", [], 1, 20, POSE))
     assert decision.action == "forward"
     assert decision.amount == 0.5
@@ -150,7 +156,7 @@ def test_decide_raises_on_non_200(monkeypatch):
     response = httpx.Response(500, text="internal server error, something broke badly")
     _install_fake_post(monkeypatch, response)
 
-    client = OpenAIVlmClient(base_url="http://localhost:8000", model="qwen-vl")
+    client = OpenAIVlmClient(base_url="http://localhost:11434", model="qwen3-vl:30b-a3b-instruct")
     with pytest.raises(RuntimeError, match="500"):
         asyncio.run(client.decide("go to the bed", "abc123", [], 1, 20, POSE))
 
@@ -160,12 +166,12 @@ def test_decide_request_contains_image_and_system_prompt(monkeypatch):
     response = httpx.Response(200, json=body)
     calls = _install_fake_post(monkeypatch, response)
 
-    client = OpenAIVlmClient(base_url="http://localhost:8000", model="qwen-vl")
+    client = OpenAIVlmClient(base_url="http://localhost:11434", model="qwen3-vl:30b-a3b-instruct")
     asyncio.run(client.decide("go to the bed", "abc123", [], 1, 20, POSE))
 
     assert len(calls) == 1
     payload = calls[0]["json"]
-    assert payload["model"] == "qwen-vl"
+    assert payload["model"] == "qwen3-vl:30b-a3b-instruct"
     messages = payload["messages"]
     assert messages[0] == {"role": "system", "content": client.system_prompt}
     content = messages[1]["content"]
@@ -173,7 +179,7 @@ def test_decide_request_contains_image_and_system_prompt(monkeypatch):
     assert content[0]["image_url"]["url"] == "data:image/jpeg;base64,abc123"
     assert content[1]["type"] == "text"
     assert "go to the bed" in content[1]["text"]
-    assert calls[0]["url"] == "http://localhost:8000/v1/chat/completions"
+    assert calls[0]["url"] == "http://localhost:11434/v1/chat/completions"
 
 
 def test_decide_reuses_single_client_across_calls(monkeypatch):
@@ -181,7 +187,7 @@ def test_decide_reuses_single_client_across_calls(monkeypatch):
     response = httpx.Response(200, json=body)
     _install_fake_post(monkeypatch, response)
 
-    client = OpenAIVlmClient(base_url="http://localhost:8000", model="qwen-vl")
+    client = OpenAIVlmClient(base_url="http://localhost:11434", model="qwen3-vl:30b-a3b-instruct")
 
     async def scenario():
         await client.decide("goal", "abc", [], 1, 20, POSE)
@@ -198,5 +204,13 @@ def test_decide_reuses_single_client_across_calls(monkeypatch):
 
 
 def test_close_without_ever_deciding_is_a_noop():
-    client = OpenAIVlmClient(base_url="http://localhost:8000", model="qwen-vl")
+    client = OpenAIVlmClient(base_url="http://localhost:11434", model="qwen3-vl:30b-a3b-instruct")
     asyncio.run(client.close())
+
+
+def test_defaults_are_the_30b_on_ollama_with_the_room_prompt():
+    client = OpenAIVlmClient()
+    assert client.base_url == DEFAULT_VLM_URL == "http://127.0.0.1:11434/v1"
+    assert client.model == DEFAULT_VLM_MODEL == "qwen3-vl:30b-a3b-instruct"
+    assert client.system_prompt == SYSTEM_PROMPT
+    assert client.actions == ACTIONS

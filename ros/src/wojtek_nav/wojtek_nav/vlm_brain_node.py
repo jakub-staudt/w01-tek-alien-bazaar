@@ -1,7 +1,7 @@
 """ROS shell for the VLM brain: instruction in, exploration loop out.
 
-    ros2 launch wojtek_nav brain.launch.py url:=http://<vlm host>:8000 \
-        [model:=Qwen/Qwen3-VL-8B-Instruct] [instruction:="podejdź do fioletowego słupa"]
+    ros2 launch wojtek_nav brain.launch.py url:=http://<ollama host>:11434 \
+        [model:=qwen3-vl:30b-a3b-instruct] [instruction:="podejdź do fioletowego słupa"]
     ros2 run wojtek_nav vlm_brain_node --ros-args -p url:=... -p instruction:=...
 
 Inputs
@@ -31,10 +31,9 @@ Outputs
   wojtek/vlm/status       std_msgs/String, JSON per step, latched.
   wojtek/vlm/annotated    the picture with the model's point drawn.
 
-The model is any OpenAI-compatible chat endpoint with JSON-schema structured
-output: vLLM (scripts/serve_vlm.sh serves Qwen3-VL-8B-Instruct, the
-brain's default) or Ollama. `url` is the server's base URL, with or
-without /v1. The policy itself is wojtek_nav/vlm_brain.py.
+The model is Qwen3-VL 30B-A3B (qwen3-vl:30b-a3b-instruct) served by Ollama
+through its OpenAI-compatible chat endpoint with JSON-schema structured
+output. `url` is the server's base URL, with or without /v1. The policy itself is wojtek_nav/vlm_brain.py.
 """
 
 import base64
@@ -83,7 +82,6 @@ class VlmBrainNode(Node):
         p("instruction", "")
         p("url", DEFAULT_URL)
         p("model", DEFAULT_MODEL)
-        p("api_key", "EMPTY")           # what vLLM expects when it has no key
         p("image_topic", "/camera/camera/color/image_raw")
         p("compressed", True)           # <image_topic>/compressed, the camera's own JPEG
         p("odom_frame", "odom")
@@ -221,8 +219,7 @@ class VlmBrainNode(Node):
             "response_format": {"type": "json_schema", "json_schema": {"name": "nav", "schema": schema, "strict": True}},
         }
         req = urllib.request.Request(self.endpoint, data=json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json",
-                                              "Authorization": f"Bearer {self._g('api_key')}"})
+                                     headers={"Content-Type": "application/json"})
         t0 = time.perf_counter()
         with urllib.request.urlopen(req, timeout=self._g("request_timeout_s")) as r:
             out = json.load(r)

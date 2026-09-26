@@ -58,8 +58,8 @@ def test_brain_launch_cmd_forwards_only_what_was_given():
     from wojtek_bringup.robot import brain_launch_cmd
     assert brain_launch_cmd(_Args(vlm=True)) == \
         ["ros2", "launch", "wojtek_nav", "brain.launch.py"]
-    cmd = brain_launch_cmd(_Args(vlm=True, vlm_url="http://box:8000", vlm_model="m"))
-    assert cmd[4:] == ["url:=http://box:8000", "model:=m"]
+    cmd = brain_launch_cmd(_Args(vlm=True, vlm_url="http://box:11434", vlm_model="m"))
+    assert cmd[4:] == ["url:=http://box:11434", "model:=m"]
 
 
 class _FakeProc:
@@ -112,9 +112,9 @@ def test_sim_web_console_flag_reaches_the_launch(spawned):
 
 
 def test_sim_vlm_is_a_launch_argument_not_a_process(spawned):
-    commands = spawned(["--sim", "--no-viz", "--vlm", "--vlm-url", "http://box:8000"])
+    commands = spawned(["--sim", "--no-viz", "--vlm", "--vlm-url", "http://box:11434"])
     cmd = _sim_launch(commands)
-    assert "vlm:=true" in cmd and "vlm_url:=http://box:8000" in cmd
+    assert "vlm:=true" in cmd and "vlm_url:=http://box:11434" in cmd
     brains = [c for c in commands if "brain.launch.py" in c]
     assert brains == [], "robot.py spawned the brain next to the sim launch's"
 

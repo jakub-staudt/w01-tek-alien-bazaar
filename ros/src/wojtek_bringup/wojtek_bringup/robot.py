@@ -136,12 +136,12 @@ def main():
                          "in the stack underneath, and a model server at "
                          "VLM_URL / --vlm-url")
     ap.add_argument("--vlm-url", default=None,
-                    help="base URL of the model server for --vlm "
+                    help="base URL of the Ollama server for --vlm "
                          "(default: VLM_URL from the environment, else "
-                         "localhost:8000)")
+                         "localhost:11434)")
     ap.add_argument("--vlm-model", default=None,
-                    help="model name for --vlm (default: the brain's, "
-                         "Qwen3-VL-8B-Instruct)")
+                    help="Ollama model tag for --vlm (default: the brain's, "
+                         "qwen3-vl:30b-a3b-instruct)")
     ap.add_argument("--plotjuggler", action="store_true", help="also open PlotJuggler")
     ap.add_argument("--benchmark", action="store_true",
                     help="with --sim: also start the AprilTag benchmark rig "
