@@ -29,9 +29,10 @@
     Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
     HasSegmentScaleCompensation: false
   Children:
-    - !<own> dfbc70ca-a1f2-4519-951d-25319a902793
+    - !<own> 82c29f6e-7b02-490c-942f-319bb73dd10e
   Components:
     - !<own> 00000000-0000-0065-0000-000000000065
+    - !<own> 62027b45-738a-4584-85ed-c2128f8b4f60
 - !<Camera/00000000-0000-0065-0000-000000000065>
   PrefabRemaps:
     []
@@ -606,6 +607,8 @@
     []
   Components:
     - !<own> 7f380157-d5e8-4670-99b1-92cfc2bee340
+    - !<own> 56c6e417-66ec-4fcc-99f0-b69ad9e90bd6
+    - !<own> f573ceb3-4ff7-44ad-b205-99ea2086340f
 - !<SceneObject/1ddf6055-b37e-4e80-a2f2-1c4f6d127f1a>
   PrefabRemaps:
     []
@@ -1094,6 +1097,23 @@
     - !<own> b611f75c-91ad-449a-a5a0-d9b5067b1daf
   Components:
     []
+- !<AudioComponent/56c6e417-66ec-4fcc-99f0-b69ad9e90bd6>
+  PrefabRemaps:
+    []
+  Name: Audio
+  Enabled: true
+  AudioTrack: !<reference> 00000000-0000-0000-0000-000000000000
+  EnableAutoplayLoop: false
+  Volume: 1.000000
+  EnableMixToSnap: false
+  RecordVolume: 1.000000
+  EnableSpatialAudio: false
+  EnableDistanceEffect: false
+  CurveType: Logarithm
+  MinDistance: 0.000000
+  MaxDistance: 100.000000
+  EnableDirectivityEffect: false
+  EnablePositionEffect: false
 - !<ScriptComponent/58b59d32-fcd8-4f76-b4fb-149108313e2d>
   PrefabRemaps:
     []
@@ -1245,6 +1265,16 @@
     - !<own> 862fb5ba-536e-4abf-abe4-32b78d83d8e2
   Components:
     []
+- !<DeviceTracking/62027b45-738a-4584-85ed-c2128f8b4f60>
+  PrefabRemaps:
+    []
+  Name: Device Tracking
+  Enabled: true
+  DeviceTrackingMode: World
+  RotationOptions: !<RotationOptions>
+    InvertRotation: false
+  SurfaceOptions: !<SurfaceOptions>
+    EnhanceWithNativeAR: false
 - !<SceneObject/6347eac8-cde0-43ba-a53e-a9c5e11b8eb6>
   PrefabRemaps:
     []
@@ -1406,12 +1436,17 @@
     "":
       arrowObject: !<reference.SceneObject> 3942a3bd-c674-461d-a248-b2d83b19a2be
       arrowTransform: !<reference.ScreenTransform> 3aa2eec3-d09e-4d94-ae2e-1e18a07203c9
+      arrowText: !<reference.Text> 95878782-2102-4f79-a50c-91dd2fcbc71c
       statusText: !<reference.Text> e7887eb6-09cb-496e-9da6-dbca6ac0659c
       useLeftHand: false
       deadzoneScreen: 0.030000
       maxDragScreen: 0.180000
       maxLinearSpeed: 0.300000
       maxAngularSpeed: 0.500000
+      startAudio: !<reference.AudioComponent> 56c6e417-66ec-4fcc-99f0-b69ad9e90bd6
+      endAudio: !<reference.AudioComponent> f573ceb3-4ff7-44ad-b205-99ea2086340f
+      startSound: !<reference.AudioTrackAsset> edad7d53-55da-40b1-9025-fad0e7207862
+      endSound: !<reference.AudioTrackAsset> 82028831-1631-4d7b-b548-ff6be4e0a2ba
   ScriptTypes:
     "":
       {}
@@ -1430,6 +1465,21 @@
     - !<own> 75aa13c9-3919-42f6-88d9-f7dcfef17ffc
   Components:
     []
+- !<SceneObject/82c29f6e-7b02-490c-942f-319bb73dd10e>
+  PrefabRemaps:
+    []
+  Name: Canvas
+  Enabled: true
+  Layers: 1
+  LocalTransform: !<TransformEntity>
+    Position: {x: 0.000000, y: 0.000000, z: -100.000000}
+    Rotation: {x: 0.000000, y: 0.000000, z: 0.000000}
+    Scale: {x: 1.000000, y: 1.000000, z: 1.000000}
+    HasSegmentScaleCompensation: false
+  Children:
+    - !<own> dfbc70ca-a1f2-4519-951d-25319a902793
+  Components:
+    - !<own> b538fc81-a2c5-43b5-b46c-d41e4d1ebf64
 - !<SceneObject/82fddacd-68b3-4a88-b960-d90b00084ab7>
   PrefabRemaps:
     []
@@ -1677,8 +1727,8 @@
   ShowEditingPreview: true
   TouchHandler: !<reference> 00000000-0000-0000-0000-000000000000
   SizeToFit: false
-  FontSize: 48
-  Font: !<reference> 00000000-0000-0000-0000-000000000000
+  FontSize: 180
+  Font: !<reference> 474cb1a7-2aed-4369-b790-7a6003e14427
   LayoutRect:
     left: -7.500000
     bottom: -2.250000
@@ -1688,7 +1738,7 @@
   OverflowHorizontal: Overflow
   Fill: !<TextFill>
     Mode: Solid
-    Color: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
+    Color: {x: 0.224000, y: 1.000000, z: 0.078000, w: 1.000000}
     Texture: !<reference> 00000000-0000-0000-0000-000000000000
     ColorTint: {x: 1.000000, y: 1.000000, z: 1.000000, w: 1.000000}
     TileCount: 5.000000
@@ -2042,6 +2092,18 @@
     - !<own> be5d4117-45c7-43bb-ba11-07638cb13333
   Components:
     []
+- !<Canvas/b538fc81-a2c5-43b5-b46c-d41e4d1ebf64>
+  PrefabRemaps:
+    []
+  Name: Canvas
+  Enabled: true
+  UnitType: World
+  SortingType: Hierarchy
+  WorldSpaceRect:
+    left: -15.000000
+    bottom: -20.000000
+    right: 15.000000
+    top: 20.000000
 - !<SceneObject/b611f75c-91ad-449a-a5a0-d9b5067b1daf>
   PrefabRemaps:
     []
@@ -2666,8 +2728,8 @@
   ShowEditingPreview: true
   TouchHandler: !<reference> 00000000-0000-0000-0000-000000000000
   SizeToFit: false
-  FontSize: 48
-  Font: !<reference> 00000000-0000-0000-0000-000000000000
+  FontSize: 90
+  Font: !<reference> 474cb1a7-2aed-4369-b790-7a6003e14427
   LayoutRect:
     left: -7.500000
     bottom: -2.250000
@@ -2849,6 +2911,23 @@
     - !<own> 9b785f34-a599-43b4-a3f3-af2d9b8e7a77
   Components:
     - !<own> 3090881b-84b5-4a07-bbde-6abe57e6c9a9
+- !<AudioComponent/f573ceb3-4ff7-44ad-b205-99ea2086340f>
+  PrefabRemaps:
+    []
+  Name: Audio
+  Enabled: true
+  AudioTrack: !<reference> 00000000-0000-0000-0000-000000000000
+  EnableAutoplayLoop: false
+  Volume: 1.000000
+  EnableMixToSnap: false
+  RecordVolume: 1.000000
+  EnableSpatialAudio: false
+  EnableDistanceEffect: false
+  CurveType: Logarithm
+  MinDistance: 0.000000
+  MaxDistance: 100.000000
+  EnableDirectivityEffect: false
+  EnablePositionEffect: false
 - !<SceneObject/f9239e36-4c4e-4121-8ce5-2c5afc61a6bd>
   PrefabRemaps:
     []

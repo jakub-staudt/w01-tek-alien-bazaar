@@ -27,6 +27,7 @@
   PackagePolicy: CanBeUnpacked
   ScriptInputsHidden:
     arrowObject: false
+    arrowText: false
     arrowTransform: false
     deadzoneScreen: false
     endAudio: false
@@ -49,6 +50,7 @@
   DefaultScriptInputs:
     - arrowObject: !<reference.SceneObject> 00000000-0000-0000-0000-000000000000
       arrowTransform: !<reference.ScreenTransform> 00000000-0000-0000-0000-000000000000
+      arrowText: !<reference.Text> 00000000-0000-0000-0000-000000000000
       statusText: !<reference.Text> 00000000-0000-0000-0000-000000000000
       useLeftHand: false
       deadzoneScreen: 0.030000
@@ -65,6 +67,7 @@
   InputLines:
     - // @input SceneObject arrowObject
     - // @input Component.ScreenTransform arrowTransform
+    - // @input Component.Text arrowText
     - // @input Component.Text statusText
     - // @input bool useLeftHand
     - // @input float deadzoneScreen = 0.03
