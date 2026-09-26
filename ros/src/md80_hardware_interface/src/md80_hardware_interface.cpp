@@ -433,9 +433,23 @@ void MD80HardwareInterface::enable_motors()
       "DRY RUN: drives left DISABLED -- no torque will reach the motors; "
       "encoder states still stream");
   } else {
+    // Optional pause between enables (URDF <hardware> param
+    // enable_stagger_ms, default 0 = back to back). Measured 2026-09-26: the
+    // drives' CAN watchdog (100 ms, mdtool setup info) starts counting at
+    // enable, and the update loop that feeds it only begins after the LAST
+    // enable -- with 150 ms here every drive but the last tripped its
+    // watchdog and sat enabled-but-idle: positions streamed, zero torque,
+    // no error flag. Any stagger adds to the first drive's wait, so leave
+    // this at 0 unless the drives' watchdog is lengthened to match.
+    const auto & params = info_.hardware_parameters;
+    const int stagger_ms =
+      params.count("enable_stagger_ms") ? std::stoi(params.at("enable_stagger_ms")) : 0;
     for (auto & md80 : md80_info_) {
       auto candle = find_candle_by_motor_can_id(md80.can_id);
       candle->controlMd80Enable(md80.can_id, true);
+      if (stagger_ms > 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(stagger_ms));
+      }
     }
   }
 
