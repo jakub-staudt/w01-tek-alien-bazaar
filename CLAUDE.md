@@ -29,7 +29,7 @@ keep the command, seed, and resulting run directory together.
   `training/` depends on it.
 - `skills/` contains opt-in local guides.  Claude users must explicitly
   symlink a skill or ask to read its `SKILL.md`; see [skills/README.md](skills/README.md).
-  The operator GUI for the VLM brain (a Streamlit page that sends a task to
+  The operator GUI for the VLM brain (a JS web page that sends a task to
   `wojtek_nav`'s brain and shows its steps, in the sim or, human-authorized,
   on the robot) is an experiment whose own hygiene test forbids naming it in
   this file; its operating guide is

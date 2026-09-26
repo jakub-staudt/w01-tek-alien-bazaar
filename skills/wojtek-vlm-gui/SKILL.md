@@ -1,17 +1,18 @@
 ---
 name: wojtek-vlm-gui
-description: Run and drive the operator GUI for Wojtek's VLM brain -- the Streamlit page in experiments/wojtek_vlm_gui that sends a task to wojtek_nav's vlm_brain_node and shows its step log -- against the MuJoCo sim or, with human authorization, the physical robot. Use when asked to "tell Wojtek where to go", open the VLM page, run a VLM session, or check the brain's steps.
+description: Run and drive the operator GUI for Wojtek's VLM brain -- the JavaScript page in experiments/wojtek_vlm_gui that sends a task to wojtek_nav's vlm_brain_node and shows its step log -- against the MuJoCo sim or, with human authorization, the physical robot. Use when asked to "tell Wojtek where to go", open the VLM page, run a VLM session, or check the brain's steps.
 ---
 
 # The VLM GUI (experiments/wojtek_vlm_gui)
 
-A Streamlit page on http://localhost:8501 where the operator types a task
+A JavaScript page on http://localhost:8501 where the operator types a task
 and watches Wojtek's VLM brain work through it. Every inference and motion
 decision is the brain's (`ros/src/wojtek_nav`, `vlm_brain_node`,
 `pixel_goal_node`, `goto_node`, the costmap); the page is a thin ROS 2
 client that publishes the instruction and the cancel and shows the brain's
-status and the picture it answered on. It composes no prompt, calls no
-model, publishes no `/cmd_vel` and reads no camera stream.
+status, the picture it answered on and the camera's JPEG. It composes no
+prompt, calls no model and never drives: the only `/cmd_vel` it sends is a
+zero Twist held for 1 s on STOP, which freezes the robot where it stands.
 
 Read `experiments/wojtek_vlm_gui/README.md` for the wiring and
 `ros/src/wojtek_nav/README.md` for the brain; this skill is the operating
@@ -47,10 +48,21 @@ If `Arm` refuses with a joint displacement just over 0.15 rad (the sim's
 soft PD servo sags), loosen it for the session inside `./ros/dev.sh`:
 `ros2 param set /wojtek_real_io max_arm_jump_rad 0.3`.
 
+## Session, camera bench (a person walks for the robot)
+
+The robot's computer on the cable runs only the camera, `sysmon_node` and a
+zenoh bridge; the brain, the nav stack, the walker and the page run on the
+PC on their own ROS domain (43), so a sim on 42 is untouched. The page's
+**Walk** panel tells the person carrying the camera what to do. Details and
+measurements: the experiment README, "The camera bench".
+
 ## The rule with the pad and the Deck
 
 `/cmd_vel` is shared by every drive source and `policy_node` keeps the
 last message. **STOP the brain before driving with the pad or the Deck.**
+STOP (the button or Esc) freezes the robot: goal and task cancelled,
+`/cmd_vel` held at zero, the gait keeps it standing. Policy off and Disarm
+are not a freeze: the legs hold their last pose, and mid-step that tips it.
 Disarm from anywhere stops the motors; the page's Disarm and Lie down also
 end the brain's task. A task typed while no brain subscribes is refused
 with a message, never dropped silently.
@@ -79,9 +91,15 @@ docs, never to the experiment directory.
 - `ros/sim.sh` exits at once without `HF_ORGANIZATION`/`HF_TOKEN` (or
   `WOJTEK_POLICY`, or `policy:=`).
 - The brain's annotated picture is a raw `rgb8` Image (2.7 MB at
-  1280x720, one per model call); it stays on the PC between the brain and
-  the page. Do not add a camera subscription to the page: a third reader
-  of the colour stream is what starved the robot's link before.
+  1280x720, one per model call); it stays on the machine that runs the
+  brain and the page. The page's live camera view reads the camera's
+  JPEG (`/compressed`), never the raw image: the raw colour stream is
+  what starved the robot's link before. The page runs on the PC, never on
+  the robot; on the cable bench the JPEG crosses the cable, not the wifi.
+- The walker (`run.sh walker`) publishes odom -> base_link. It listens on
+  /tf for 2 s first and never broadcasts next to another source of that
+  transform (the robot's leg odometry, a sim); the Walk panel's guide then
+  carries `tf_conflict: true`.
 - On hosts where CycloneDDS multicast loopback is broken, export
   `ROS_LOCALHOST_ONLY=1` for both the sim and the page containers.
 - The web console (http://localhost:8080) still has its own brain panel

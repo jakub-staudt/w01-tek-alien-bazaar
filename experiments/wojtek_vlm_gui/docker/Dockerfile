@@ -1,4 +1,4 @@
-# The operator GUI's runtime: ROS 2 Jazzy + Streamlit, nothing else. A
+# The operator GUI's runtime: ROS 2 Jazzy + a small ASGI server for the JS page. A
 # container next to wojtek_robot on the same host network and DDS domain
 # (compose.yaml); nothing is installed into wojtek_robot. The page is a
 # thin ROS 2 client of wojtek_nav's vlm_brain_node: no model, no motion
@@ -19,14 +19,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ros-${ROS_DISTRO}-rmw-cyclonedds-cpp && \
     rm -rf /var/lib/apt/lists/*
 
-# Streamlit in a venv that sees the system site-packages (rclpy, the
+# The web server in a venv that sees the system site-packages (rclpy, the
 # message packages, numpy 1.26). numpy is pinned below 2 so the venv never
 # shadows the numpy rclpy's C extensions were built against. It lives in
 # the image, never under the bind-mounted checkout.
 ENV GUI_VENV=/opt/gui-venv
 RUN python3 -m venv --system-site-packages "${GUI_VENV}" && \
     "${GUI_VENV}/bin/pip" install --no-cache-dir \
-        "streamlit>=1.40" "numpy<2" "pytest>=8.0" "pytest-timeout>=2.3"
+        "starlette>=0.40" "uvicorn>=0.30" "websockets>=12" "pillow>=10" \
+        "numpy<2" "pytest>=8.0" "pytest-timeout>=2.3"
 ENV PATH="${GUI_VENV}/bin:${PATH}"
 
 # Interactive shells and every `docker exec` through the entrypoint see

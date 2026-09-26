@@ -2,13 +2,21 @@
 
 Publishes the operator's instruction on wojtek/vlm/instruction and the
 cancel on wojtek/nav/cancel; subscribes to the brain's status JSON, the
-two nav status words and the annotated picture. Nothing else: no /cmd_vel
-(the drive sources' topic), no camera topic (the brain reads the camera,
-the page shows only the frame the brain annotated, one per model call).
+two nav status words, the annotated picture, the camera's own JPEG
+for the live view (limits.CAMERA_TOPIC, the stream the brain reads), the
+raw depth (limits.DEPTH_TOPIC), the robot's load (limits.SYSMON_TOPIC,
+from sysmon_node on the RPi) and the walker's guide (limits.GUIDE_TOPIC).
+
+Every stored item carries a sequence number (`seq()`), so the web server
+sends a client only what changed since its last look and drops frames a
+slow browser could not take, instead of queueing them.
+On STOP (`freeze()`) it also holds /cmd_vel at zero for a second: the
+robot freezes where it stands (limits.FREEZE_*). A zero Twist is the only
+thing it ever publishes there; it never drives.
 
 `BrainClient` takes any node-like object (the tests hand it a mock);
 `start_client` makes the real node and spins it on a daemon thread so
-Streamlit's own thread never blocks on ROS.
+the web server never blocks on ROS.
 """
 
 from __future__ import annotations
@@ -19,10 +27,11 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import rclpy
+from geometry_msgs.msg import Twist
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
-from sensor_msgs.msg import Image
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
+from sensor_msgs.msg import CompressedImage, Image
 from std_msgs.msg import Empty, String
 
 from wojtek_vlm_gui import limits
@@ -47,12 +56,32 @@ class BrainClient:
         self.goto_status: Optional[str] = None
         self.pixel_status: Optional[str] = None
         self._annotated: Optional[np.ndarray] = None
+        self._jpeg: Optional[bytes] = None
+        self._jpeg_at: float = 0.0
+        self._sys: Optional[Dict[str, Any]] = None
+        self._sys_at: float = 0.0
+        self._depth: Optional[Tuple[int, int, bytes]] = None   # (width, height, uint16 LE)
+        self._guide: Optional[Dict[str, Any]] = None
+        self._seq: Dict[str, int] = {"log": 0, "nav": 0, "annotated": 0,
+                                     "camera": 0, "depth": 0, "sys": 0, "guide": 0}
         self._pub_instruction = node.create_publisher(String, limits.INSTRUCTION_TOPIC, 10)
         self._pub_cancel = node.create_publisher(Empty, limits.CANCEL_TOPIC, 10)
+        # Zeros only, and only while a STOP holds (freeze / _hold_zero).
+        self._pub_zero = node.create_publisher(Twist, limits.CMD_VEL_TOPIC, 10)
+        self._freeze_until = 0.0
+        self._holding = False
         node.create_subscription(String, limits.VLM_STATUS_TOPIC, self._on_status, LATCHED)
         node.create_subscription(String, limits.GOTO_STATUS_TOPIC, self._on_goto, LATCHED)
         node.create_subscription(String, limits.PIXEL_STATUS_TOPIC, self._on_pixel, LATCHED)
         node.create_subscription(Image, limits.ANNOTATED_TOPIC, self._on_annotated, 1)
+        # The camera's JPEG: best-effort, depth 1, the sensor profile the
+        # driver and the brain use; a late frame is dropped, never queued.
+        node.create_subscription(CompressedImage, limits.CAMERA_TOPIC, self._on_camera,
+                                 qos_profile_sensor_data)
+        node.create_subscription(Image, limits.DEPTH_TOPIC, self._on_depth, qos_profile_sensor_data)
+        # Best effort, matching sysmon_node's publisher (see there why).
+        node.create_subscription(String, limits.SYSMON_TOPIC, self._on_sysmon, qos_profile_sensor_data)
+        node.create_subscription(String, limits.GUIDE_TOPIC, self._on_guide, 1)   # volatile, see sysmon_node
 
     # -- out -------------------------------------------------------------
 
@@ -61,7 +90,7 @@ class BrainClient:
         when no brain subscribes within the wait: never a silent no-op."""
         text = text.strip()
         if is_stop_word(text):
-            return self.stop()
+            return self.freeze()
         if not self._brain_listening():
             return False, (f"no brain is listening on {limits.INSTRUCTION_TOPIC} "
                            "(is the session up with vlm:=true?)")
@@ -75,6 +104,45 @@ class BrainClient:
         self._pub_cancel.publish(Empty())
         self._pub_instruction.publish(String(data=""))
         return True, "STOP sent"
+
+    def freeze(self, hold_s: float = limits.FREEZE_HOLD_S,
+               period_s: float = limits.FREEZE_PERIOD_S, start_hold=None) -> Tuple[bool, str]:
+        """STOP: the robot freezes where it stands. The brain's stop first
+        (goto and the resolver drop their goal, the brain halts), then a
+        zero Twist on /cmd_vel at once, held for hold_s (limits.FREEZE_*
+        says why zero velocity and not policy off or disarm). Never blocks:
+        the hold runs on its own thread; a STOP during a hold extends it
+        instead of starting a second one. `start_hold` replaces the thread
+        starter in the tests."""
+        self.stop()
+        self._zero()
+        with self._lock:
+            self._freeze_until = time.monotonic() + float(hold_s)
+            start = not self._holding
+            self._holding = True
+        if start:
+            (start_hold or self._start_hold_thread)(float(period_s))
+        return True, f"STOP: task and goal cancelled, /cmd_vel held at zero for {hold_s:g} s"
+
+    def _zero(self) -> None:
+        self._pub_zero.publish(Twist())   # all zeros; linear.z 0 = the policy's standing height
+
+    def _start_hold_thread(self, period_s: float) -> None:
+        threading.Thread(target=self._hold_zero, args=(period_s,),
+                         name="wojtek_vlm_gui_freeze", daemon=True).start()
+
+    def _hold_zero(self, period_s: float, sleep=time.sleep, clock=time.monotonic) -> None:
+        """One zero Twist every period_s until the freeze runs out. The
+        deadline is checked and the hold released under one lock, so a STOP
+        that lands as the hold ends either extends this one or starts the
+        next, never neither."""
+        while True:
+            with self._lock:
+                if clock() >= self._freeze_until:
+                    self._holding = False
+                    return
+            self._zero()
+            sleep(period_s)
 
     def _brain_listening(self) -> bool:
         deadline = time.monotonic() + self._wait_s
@@ -97,14 +165,17 @@ class BrainClient:
             if status.get("action") == "ask" and self._annotated is not None:
                 status["_image"] = self._annotated
             self.log.push(status)
+            self._seq["log"] += 1
 
     def _on_goto(self, msg) -> None:
         with self._lock:
             self.goto_status = msg.data
+            self._seq["nav"] += 1
 
     def _on_pixel(self, msg) -> None:
         with self._lock:
             self.pixel_status = msg.data
+            self._seq["nav"] += 1
 
     def _on_annotated(self, msg) -> None:
         if msg.encoding != ANNOTATED_ENCODING:
@@ -112,6 +183,74 @@ class BrainClient:
         img = np.frombuffer(bytes(msg.data), dtype=np.uint8).reshape(msg.height, msg.width, 3)
         with self._lock:
             self._annotated = img
+            self._seq["annotated"] += 1
+
+    def _on_camera(self, msg) -> None:
+        with self._lock:
+            self._jpeg = bytes(msg.data)
+            self._jpeg_at = time.monotonic()
+            self._seq["camera"] += 1
+
+    def _on_depth(self, msg) -> None:
+        if msg.encoding not in limits.DEPTH_ENCODINGS or msg.is_bigendian:
+            return
+        data = bytes(msg.data)
+        if msg.step != msg.width * 2:   # padded rows: keep the pixels only
+            data = b"".join(data[r * msg.step:r * msg.step + msg.width * 2] for r in range(msg.height))
+        with self._lock:
+            self._depth = (int(msg.width), int(msg.height), data)
+            self._seq["depth"] += 1
+
+    def _on_sysmon(self, msg) -> None:
+        data = parse_status(msg.data)   # any JSON object; None for garbage
+        if data is None:
+            return
+        with self._lock:
+            self._sys = data
+            self._sys_at = time.monotonic()
+            self._seq["sys"] += 1
+
+    def _on_guide(self, msg) -> None:
+        data = parse_status(msg.data)
+        if data is None:
+            return
+        with self._lock:
+            self._guide = data
+            self._seq["guide"] += 1
+
+    def latest_guide(self) -> Optional[Dict[str, Any]]:
+        with self._lock:
+            return self._guide
+
+    def seq(self) -> Dict[str, int]:
+        """How many times each stored item changed; a web client compares
+        it with what it last sent."""
+        with self._lock:
+            return dict(self._seq)
+
+    def latest_depth(self) -> Optional[Tuple[int, int, bytes]]:
+        with self._lock:
+            return self._depth
+
+    def latest_annotated(self) -> Optional[np.ndarray]:
+        with self._lock:
+            return self._annotated
+
+    def latest_sysmon(self) -> Tuple[Optional[Dict[str, Any]], float]:
+        """The robot's last load reading as published and its age in
+        seconds (None, inf before the first one)."""
+        with self._lock:
+            if self._sys is None:
+                return None, float("inf")
+            return self._sys, time.monotonic() - self._sys_at
+
+    def latest_jpeg(self) -> Tuple[Optional[bytes], float]:
+        """The newest camera JPEG and its age in seconds (None, inf before
+        the first frame)."""
+        with self._lock:
+            if self._jpeg is None:
+                return None, float("inf")
+            return self._jpeg, time.monotonic() - self._jpeg_at
 
     def latest(self) -> Dict[str, Any]:
         """A snapshot for one render: the task's lines, the nav words."""
@@ -127,8 +266,8 @@ class BrainClient:
 
 
 def start_client(node_name: str = "wojtek_vlm_gui") -> BrainClient:
-    """The real node, spun on a daemon thread. Streamlit calls `send`,
-    `stop` and `latest` from its own thread; rclpy allows publishing from
+    """The real node, spun on a daemon thread. The web server calls `send`,
+    `stop` and `latest` from its own threads; rclpy allows publishing from
     any thread, and the callbacks land under the client's lock."""
     if not rclpy.ok():
         rclpy.init()
