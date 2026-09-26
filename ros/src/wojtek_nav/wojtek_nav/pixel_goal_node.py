@@ -122,8 +122,7 @@ class PixelGoalNode(Node):
                                  lambda m: setattr(self, "_depth_info", m), qos_profile_sensor_data)
         self.create_subscription(CameraInfo, g("colour_info_topic"),
                                  lambda m: setattr(self, "_colour_info", m), qos_profile_sensor_data)
-        self.create_subscription(String, "wojtek/nav/status",
-                                 lambda m: setattr(self, "_goto_status", m.data), latched)
+        self.create_subscription(String, "wojtek/nav/status", self._on_goto_status, latched)
         self.create_subscription(PointStamped, "wojtek/nav/pixel_goal", self._on_pixel, 10)
         self.create_subscription(Empty, "wojtek/nav/cancel", self._on_cancel, 10)
         self._pub_goal = self.create_publisher(PoseStamped, "wojtek/nav/goal", 10)
@@ -144,6 +143,10 @@ class PixelGoalNode(Node):
         cutoff = t - self._ring_s
         while self._ring and self._ring[0][0] < cutoff:
             self._ring.pop(0)
+
+    def _on_goto_status(self, msg):
+        self._goto_status = msg.data
+        self._tracker.observe(msg.data)
 
     def _on_pixel(self, msg):
         if self._goal is not None and not self._tracker.done:
@@ -205,7 +208,7 @@ class PixelGoalNode(Node):
         self._pub_target.publish(target)
         self._tracker.start(self._now_s())
         self.get_logger().info(
-            f"pixel ({u_c:.0f}, {v_c:.0f}) @ {stamp:.3f}: depth {z:.2f} m -> object "
+            f"pixel ({u_c:.0f}, {v_c:.0f}) @ {stamp:.3f}: depth {z:.2f} m ({share:.0%} of the patch) -> object "
             f"({target.point.x:.2f}, {target.point.y:.2f}) odom, setpoint ({gx:.2f}, {gy:.2f})"
         )
         self._set_status("sent")
