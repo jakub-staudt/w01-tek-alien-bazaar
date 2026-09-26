@@ -57,5 +57,11 @@ def test_parse_command_accepts_the_protocol_and_nothing_else():
         assert wire.parse_command(junk) is None
 
 
+def test_stop_and_only_stop_jumps_the_queue():
+    assert wire.is_urgent(wire.parse_command('{"t": "stop"}'))
+    assert not wire.is_urgent(wire.parse_command('{"t": "task", "text": "go"}'))
+    assert not wire.is_urgent(wire.parse_command('{"t": "svc", "name": "arm"}'))
+
+
 def test_the_page_can_reach_only_the_operator_services():
     assert set(wire.SERVICES) == {"stand_up", "lie_down", "arm", "disarm", "policy_on", "policy_off"}

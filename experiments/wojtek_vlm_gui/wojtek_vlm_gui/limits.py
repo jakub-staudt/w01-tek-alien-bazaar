@@ -2,8 +2,9 @@
 
 The page is a client of wojtek_nav's vlm_brain_node and of the robot's
 operator services, plus read-only looks at the camera's own JPEG and its
-raw depth for the live views. It never publishes /cmd_vel. No ROS import here; tested
-model-free.
+raw depth for the live views. It never drives the robot: the only thing it
+ever puts on /cmd_vel is a zero Twist, on STOP (see FREEZE_* below). No ROS
+import here; tested model-free.
 """
 
 from __future__ import annotations
@@ -20,10 +21,10 @@ PIXEL_STATUS_TOPIC = "/wojtek/nav/pixel_status"  # std_msgs/String, latched: res
 # --- the camera (wojtek_perception_bringup on the robot, sim_camera_node) ----
 
 # The camera node's own JPEG, the same stream the brain reads: shown live
-# in the page's camera panel. Added 2026-09-26 for the bench, where the
-# page runs ON the RPi next to the camera, so the frames cross no wifi
-# link; on a PC page over the robot's AP this is a second reader of the
-# stream (tens of KB a frame at 640x480, the size the deck streams).
+# in the page's camera panel. Added 2026-09-26 for the bench. The page runs
+# on the PC (server.py, never on the robot), so this is a second reader of
+# the stream next to the brain: tens of KB a frame at 640x480, the size the
+# deck streams, over the cable on the bench or the robot's AP otherwise.
 CAMERA_TOPIC = "/camera/camera/color/image_raw/compressed"   # sensor_msgs/CompressedImage, jpeg
 
 # The raw depth (16UC1, millimetres), shown colourised under the camera. Raw,
@@ -43,8 +44,8 @@ GOAL_TOPIC = "/wojtek/nav/goal"                   # geometry_msgs/PoseStamped, g
 # --- the robot's load (wojtek_vlm_gui/sysmon_node.py, run ON the RPi) ---------
 
 # std_msgs/String, the JSON of sysmon.Snapshot, best effort, once a second: the
-# page's Computer panel. The page runs off the robot; this is the one
-# reading that has to come from it.
+# page's Computer panel. The page runs on the PC, off the robot; this is the
+# one reading that has to come from the robot's computer.
 SYSMON_TOPIC = "/wojtek/sys/stat"
 SYSMON_PERIOD_S = 1.0
 
@@ -66,9 +67,28 @@ POLICY_SERVICE = "/wojtek/enable"      # std_srvs/SetBool: the RL gait computes 
 STAND_UP_SERVICE = "/wojtek/stand_up"  # std_srvs/Trigger: slow ramp to the home pose (refused while armed)
 LIE_DOWN_SERVICE = "/wojtek/lie_down"  # std_srvs/Trigger: slow ramp to the folded pose (refused while armed)
 
+# --- STOP: freeze the robot where it stands ---------------------------------
+#
+# STOP cancels the brain's task and goto's goal and then holds /cmd_vel at
+# zero for FREEZE_HOLD_S, one zero Twist every FREEZE_PERIOD_S. Zero
+# velocity is the freeze, not policy off and not disarm: with the policy
+# off or the robot disarmed the drives hold their LAST joint targets, and a
+# trot stopped mid-step keeps two diagonal feet in the air and tips over.
+# At zero velocity the policy keeps balancing and the robot stands still.
+# The hold outlasts every source that might still be publishing (a brain
+# turn in flight, goto's last tick); after it, policy_node's 0.5 s dead-man
+# keeps the robot at zero until a drive source speaks again. linear.z = 0
+# means "keep the policy's standing height", so the freeze also stands at
+# the default height. A pad or Deck pushed during the hold fights it: STOP
+# means stop.
+CMD_VEL_TOPIC = "/cmd_vel"   # geometry_msgs/Twist: ZEROS ONLY, on STOP
+FREEZE_HOLD_S = 1.0
+FREEZE_PERIOD_S = 0.05
+
 # What the page may write. Anything else that moves or arms the robot is
-# outside its contract: /cmd_vel belongs to the drive sources (pad, Deck,
-# consoles, text_commander, goto, the brain's turns).
+# outside its contract: a non-zero /cmd_vel belongs to the drive sources
+# (pad, Deck, consoles, text_commander, goto, the brain's turns).
 WRITABLE_TOPICS = (INSTRUCTION_TOPIC, CANCEL_TOPIC)
+ZERO_ONLY_TOPICS = (CMD_VEL_TOPIC,)
 WRITABLE_SERVICES = (ARM_SERVICE, POLICY_SERVICE, STAND_UP_SERVICE, LIE_DOWN_SERVICE)
-NEVER_PUBLISHED = ("/cmd_vel", "/wojtek/joint_targets", "/wojtek/nav/goal", "/wojtek/nav/pixel_goal")
+NEVER_PUBLISHED = ("/wojtek/joint_targets", "/wojtek/nav/goal", "/wojtek/nav/pixel_goal")

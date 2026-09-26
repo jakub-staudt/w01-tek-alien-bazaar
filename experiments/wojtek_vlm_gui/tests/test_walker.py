@@ -4,7 +4,42 @@ import math
 
 import pytest
 
-from wojtek_vlm_gui.walker import Walker
+from wojtek_vlm_gui.walker import TfGuard, Walker
+
+
+def test_the_guard_listens_before_it_lets_the_walker_broadcast():
+    g = TfGuard(listen_s=2.0)
+    assert not g.may_broadcast(0.0)          # never started
+    g.start(10.0)
+    assert not g.may_broadcast(11.9)
+    assert g.may_broadcast(12.0)
+
+
+def test_another_publisher_seen_while_listening_blocks_the_walker_for_good():
+    g = TfGuard(listen_s=2.0)
+    g.start(0.0)
+    assert g.seen(123_000) is True           # the robot's leg odometry, say
+    assert not g.may_broadcast(100.0)
+
+
+def test_the_walker_s_own_broadcasts_are_not_foreign_but_anyone_else_s_are():
+    g = TfGuard(listen_s=0.0)
+    g.start(0.0)
+    for stamp in (1_000, 2_000, 3_000):
+        g.sent(stamp)
+        assert g.seen(stamp) is False
+    assert g.may_broadcast(1.0)
+    assert g.seen(2_500) is True             # a stamp it never sent
+    assert g.seen(3_000) is True and not g.may_broadcast(2.0)   # latched
+
+
+def test_the_guard_forgets_old_stamps_but_not_recent_ones():
+    g = TfGuard(listen_s=0.0, keep=3)
+    g.start(0.0)
+    for stamp in (1, 2, 3, 4):
+        g.sent(stamp)
+    assert g.seen(4) is False and g.seen(2) is False
+    assert g.seen(1) is True                 # evicted: treated as foreign
 
 
 def run(w, seconds, dt=0.05, t0=0.0, refresh=None):

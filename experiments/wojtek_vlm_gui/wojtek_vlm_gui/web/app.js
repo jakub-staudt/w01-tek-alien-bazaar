@@ -282,7 +282,13 @@ function send(obj) {
 
 document.querySelectorAll("[data-svc]").forEach((b) =>
   b.addEventListener("click", () => send({ t: "svc", name: b.dataset.svc })));
-$("stop").addEventListener("click", () => { send({ t: "stop" }); chat.scrollTop = chat.scrollHeight; });
+function stopNow() { send({ t: "stop" }); chat.scrollTop = chat.scrollHeight; }
+$("stop").addEventListener("click", stopNow);
+// Esc freezes the robot from anywhere on the page, the task box included:
+// the hand on the keyboard is closer than the mouse to the STOP button.
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !e.repeat) { e.preventDefault(); stopNow(); }
+});
 $("task-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const text = $("task-input").value.trim();

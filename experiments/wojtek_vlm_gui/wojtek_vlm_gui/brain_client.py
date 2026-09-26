@@ -10,7 +10,9 @@ from sysmon_node on the RPi) and the walker's guide (limits.GUIDE_TOPIC).
 Every stored item carries a sequence number (`seq()`), so the web server
 sends a client only what changed since its last look and drops frames a
 slow browser could not take, instead of queueing them.
-Nothing else: no /cmd_vel (the drive sources' topic).
+On STOP (`freeze()`) it also holds /cmd_vel at zero for a second: the
+robot freezes where it stands (limits.FREEZE_*). A zero Twist is the only
+thing it ever publishes there; it never drives.
 
 `BrainClient` takes any node-like object (the tests hand it a mock);
 `start_client` makes the real node and spins it on a daemon thread so
@@ -25,6 +27,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 import rclpy
+from geometry_msgs.msg import Twist
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
@@ -63,6 +66,10 @@ class BrainClient:
                                      "camera": 0, "depth": 0, "sys": 0, "guide": 0}
         self._pub_instruction = node.create_publisher(String, limits.INSTRUCTION_TOPIC, 10)
         self._pub_cancel = node.create_publisher(Empty, limits.CANCEL_TOPIC, 10)
+        # Zeros only, and only while a STOP holds (freeze / _hold_zero).
+        self._pub_zero = node.create_publisher(Twist, limits.CMD_VEL_TOPIC, 10)
+        self._freeze_until = 0.0
+        self._holding = False
         node.create_subscription(String, limits.VLM_STATUS_TOPIC, self._on_status, LATCHED)
         node.create_subscription(String, limits.GOTO_STATUS_TOPIC, self._on_goto, LATCHED)
         node.create_subscription(String, limits.PIXEL_STATUS_TOPIC, self._on_pixel, LATCHED)
@@ -83,7 +90,7 @@ class BrainClient:
         when no brain subscribes within the wait: never a silent no-op."""
         text = text.strip()
         if is_stop_word(text):
-            return self.stop()
+            return self.freeze()
         if not self._brain_listening():
             return False, (f"no brain is listening on {limits.INSTRUCTION_TOPIC} "
                            "(is the session up with vlm:=true?)")
@@ -97,6 +104,45 @@ class BrainClient:
         self._pub_cancel.publish(Empty())
         self._pub_instruction.publish(String(data=""))
         return True, "STOP sent"
+
+    def freeze(self, hold_s: float = limits.FREEZE_HOLD_S,
+               period_s: float = limits.FREEZE_PERIOD_S, start_hold=None) -> Tuple[bool, str]:
+        """STOP: the robot freezes where it stands. The brain's stop first
+        (goto and the resolver drop their goal, the brain halts), then a
+        zero Twist on /cmd_vel at once, held for hold_s (limits.FREEZE_*
+        says why zero velocity and not policy off or disarm). Never blocks:
+        the hold runs on its own thread; a STOP during a hold extends it
+        instead of starting a second one. `start_hold` replaces the thread
+        starter in the tests."""
+        self.stop()
+        self._zero()
+        with self._lock:
+            self._freeze_until = time.monotonic() + float(hold_s)
+            start = not self._holding
+            self._holding = True
+        if start:
+            (start_hold or self._start_hold_thread)(float(period_s))
+        return True, f"STOP: task and goal cancelled, /cmd_vel held at zero for {hold_s:g} s"
+
+    def _zero(self) -> None:
+        self._pub_zero.publish(Twist())   # all zeros; linear.z 0 = the policy's standing height
+
+    def _start_hold_thread(self, period_s: float) -> None:
+        threading.Thread(target=self._hold_zero, args=(period_s,),
+                         name="wojtek_vlm_gui_freeze", daemon=True).start()
+
+    def _hold_zero(self, period_s: float, sleep=time.sleep, clock=time.monotonic) -> None:
+        """One zero Twist every period_s until the freeze runs out. The
+        deadline is checked and the hold released under one lock, so a STOP
+        that lands as the hold ends either extends this one or starts the
+        next, never neither."""
+        while True:
+            with self._lock:
+                if clock() >= self._freeze_until:
+                    self._holding = False
+                    return
+            self._zero()
+            sleep(period_s)
 
     def _brain_listening(self) -> bool:
         deadline = time.monotonic() + self._wait_s

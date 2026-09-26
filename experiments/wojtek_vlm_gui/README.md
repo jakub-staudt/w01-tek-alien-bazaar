@@ -21,7 +21,7 @@ services.
 ```
  operator ──► JS page :8501 (server.py, this experiment, its own container)
                 │ task ─────────► /wojtek/vlm/instruction (String) ──► vlm_brain_node ── /v1/chat/completions ──► Ollama on the DGX
-                │ STOP ─────────► /wojtek/nav/cancel (Empty) + "" instruction           │ pixel
+                │ STOP / Esc ───► /wojtek/nav/cancel + "" instruction + /cmd_vel 0 (1 s) │ pixel
                 │ step log ◄──── /wojtek/vlm/status (JSON, latched)                     ▼
                 │ picture ◄───── /wojtek/vlm/annotated (one frame per model call)  pixel_goal_node ──► /wojtek/nav/goal ──► goto_node ──► /cmd_vel
                 │ words ◄─────── /wojtek/nav/status, /wojtek/nav/pixel_status           costmap (odom, 6 x 6 m) ──────────┘
@@ -30,13 +30,26 @@ services.
  pad, Steam Deck, web console, text_commander ──► /cmd_vel too: policy_node keeps the last message, 0.5 s dead-man
 ```
 
-- The page never publishes `/cmd_vel` (`wojtek_vlm_gui/limits.py` lists
-  everything it touches; the tests assert the publisher and subscription
-  sets). It shows two pictures: the frame the brain annotated, one per
-  model call, and (since 2026-09-26) the camera's own JPEG live, the same
-  `/compressed` stream the brain reads. On the bench the page runs on the
-  RPi next to the camera, so that stream crosses no wifi; over the robot's
-  AP it is a second reader of the JPEG (tens of KB a frame at 640x480).
+- The page never drives the robot. The one thing it puts on `/cmd_vel` is
+  a zero Twist, on STOP (`wojtek_vlm_gui/limits.py` lists everything it
+  touches; the tests assert the publisher and subscription sets and that
+  every Twist it sends is zero). It shows two pictures: the frame the brain
+  annotated, one per model call, and (since 2026-09-26) the camera's own
+  JPEG live, the same `/compressed` stream the brain reads. The page runs
+  on the PC, never on the robot, so it is a second reader of the JPEG next
+  to the brain (tens of KB a frame at 640x480), over the cable on the
+  bench or the robot's AP otherwise.
+- **STOP freezes Wojtek where it stands** (the button, Esc anywhere on the
+  page, or a stop word typed as a task). The server acts on it the moment
+  it arrives, ahead of any service call or task still running. It cancels
+  goto's goal and the brain's task, then holds `/cmd_vel` at zero for 1 s,
+  one zero Twist every 50 ms, which outlasts a brain turn or goto tick in
+  flight; after that `policy_node`'s 0.5 s dead-man keeps the robot at zero
+  until a drive source speaks again. Zero velocity is the freeze, on
+  purpose: with the policy off or the robot disarmed the drives hold their
+  last joint targets, and a trot stopped mid-step stands on two diagonal
+  feet and tips over. At zero velocity the gait keeps balancing and the
+  robot stands. A pad or Deck pushed during the hold fights it.
 - The model route is the brain's, not the page's: `VLM_URL` and
   `VLM_MODEL` in the repo-root `.env`, read by `ros/sim.sh` into the
   `wojtek_robot` container and by `brain.launch.py`. The only inference
@@ -140,13 +153,13 @@ also ends the task.
 | `finished: done` in green, any other result (`gave_up`, `cancelled`, `replaced`, `error ...`, `timeout`) in red | the finishing status |
 | `goto: driving`, `pixel: sent` in the sidebar | `/wojtek/nav/status`, `/wojtek/nav/pixel_status` |
 | the robot's own answer after every Robot button | the services' responses |
-| right column: one bar per core of the computer serving the page (the RT cores marked), load, memory, SoC temperature -- on the bench, the RPi | `/proc/stat`, `/proc/loadavg`, `/proc/meminfo`, the thermal zone |
+| right column: one bar per core of the robot's computer (the RT cores marked), load, memory, SoC temperature | `sysmon_node` on the RPi (`/proc/stat`, `/proc/loadavg`, `/proc/meminfo`, the thermal zone) via `/wojtek/sys/stat` |
 | right column, below: the camera live, with the frame's size and age; a warning when the driver goes quiet | `/camera/camera/color/image_raw/compressed` |
 
 A task typed while nobody subscribes to the instruction topic (no session
 with `vlm:=true`) is refused in the page with a message, never dropped
 silently. A stop word (`stop`, empty, the brain's own `stój`) typed as a
-task is a STOP.
+task is a STOP, with the same freeze.
 
 ## Layout
 

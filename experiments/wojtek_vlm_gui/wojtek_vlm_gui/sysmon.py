@@ -1,12 +1,11 @@
-"""The computer the page runs on: per-core usage, load, memory, temperature.
+"""The robot's computer: per-core usage, load, memory, temperature.
 
 Plain reads of /proc and /sys, no ROS, no UI. Parsing is separate from
-reading so the tests run on strings. On the bench the page runs on the
-RPi next to the camera and the brain, so this is the robot's own
-computer; anywhere else it is whichever host serves the page, and the
-panel names it (`Snapshot.host`).
+reading so the tests run on strings. `sysmon_node` runs this on the RPi
+and publishes it; the page, on the PC, only shows what arrives, and the
+panel names the machine it came from (`Snapshot.host`).
 
-The robot's RPi isolates cores for the 400 Hz control loop
+The robot's RPi isolates cores for the 200 Hz control loop and the policy
 (`isolcpus`); those are read from /sys and marked, so an idle RT core
 reads as "reserved", not as a machine with nothing to do.
 """

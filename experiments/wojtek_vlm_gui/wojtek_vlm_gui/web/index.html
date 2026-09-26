@@ -12,7 +12,7 @@
   <span id="link" class="pill bad">connecting</span>
   <span class="spacer"></span>
   <span id="nav" class="navwords">goto - · pixel -</span>
-  <button id="stop" class="stop" title="Cancel the brain's task and goto's goal">STOP</button>
+  <button id="stop" class="stop" title="Freeze Wojtek where it stands: cancel the brain's task and goto's goal, hold /cmd_vel at zero for 1 s. Key: Esc">STOP (Esc)</button>
 </header>
 
 <div class="layout">
@@ -27,6 +27,7 @@
       <button data-svc="policy_off">Policy off</button>
     </div>
     <p class="hint">Order: Stand up, Arm, then a task. Disarm before Lie down. Disarm and Lie down also stop the brain.</p>
+    <p class="hint">STOP (or Esc, anywhere on the page) freezes Wojtek where it stands: zero velocity, the gait keeps it balanced. Policy off and Disarm are not a freeze: the legs hold their last pose, mid-step that tips it over.</p>
     <p class="hint">STOP the brain before driving with the pad or the Deck: they share /cmd_vel.</p>
   </aside>
 
