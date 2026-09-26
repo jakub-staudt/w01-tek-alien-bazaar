@@ -1430,6 +1430,11 @@
     maxDragScreen: true
     maxLinearSpeed: true
     maxAngularSpeed: true
+    enableNetworking: true
+    serverIp: true
+    serverPort: true
+    serverPath: true
+    sendRateHz: true
   ScriptTypesDefault:
     {}
   ScriptInputs:
@@ -1447,6 +1452,12 @@
       endAudio: !<reference.AudioComponent> f573ceb3-4ff7-44ad-b205-99ea2086340f
       startSound: !<reference.AudioTrackAsset> edad7d53-55da-40b1-9025-fad0e7207862
       endSound: !<reference.AudioTrackAsset> 82028831-1631-4d7b-b548-ff6be4e0a2ba
+      internetModule: !<reference.InternetModule> ad1349a2-d457-4273-b0e2-c88103304ed6
+      enableNetworking: true
+      serverIp: 192.168.8.131
+      serverPort: !<float> 8766.000000
+      serverPath: /ws
+      sendRateHz: !<float> 10.000000
   ScriptTypes:
     "":
       {}

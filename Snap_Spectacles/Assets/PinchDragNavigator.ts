@@ -53,6 +53,42 @@ export class PinchDragNavigator extends BaseScriptComponent {
     endSound: AudioTrackAsset;
 
 
+    // ---------- Robot networking ----------
+
+    // REQUIRED before pushing this script: create the InternetModule asset
+    // (Asset Browser -> + -> Internet Module) and wire it here. Lens Studio
+    // throws "Input internetModule was not provided" and kills the whole
+    // Lens on start if this is left unassigned -- there is no way to make
+    // an Asset-typed @input optional, so this input must never reach a
+    // device without a real asset behind it.
+    @input
+    internetModule: InternetModule;
+
+    // Set this off while testing the joystick with no bridge listening,
+    // to avoid a constant reconnect-error spam in the Logger.
+    @input
+    enableNetworking: boolean = true;
+
+    // The Wojtek MuJoCo simulator (this PC on the shared network), running
+    // wojtek_spectacles_bridge inside the sim container.
+    @input
+    serverIp: string = "192.168.8.131";
+
+    @input
+    serverPort: number = 8766;
+
+    // Matches the aiohttp route the bridge registers ("/ws").
+    @input
+    serverPath: string = "/ws";
+
+    // How often to send the current command, in Hz. Sends continuously
+    // (including {vx:0, wz:0} while idle) so the bridge's dead-man's
+    // switch sees a steady heartbeat and can tell "stopped" from
+    // "disconnected".
+    @input
+    sendRateHz: number = 10;
+
+
     // ---------- Public robot command ----------
 
     public currentVx: number = 0;
@@ -69,6 +105,12 @@ export class PinchDragNavigator extends BaseScriptComponent {
     private anchorScreenPos: vec2 = null;
 
     private baseArrowScale: vec3 = new vec3(1, 1, 1);
+
+    private socket: WebSocket = null;
+
+    private isConnected: boolean = false;
+
+    private sendAccumulator: number = 0;
 
 
     onAwake() {
@@ -95,10 +137,76 @@ export class PinchDragNavigator extends BaseScriptComponent {
         // Start stopped
         this.stopCommand();
 
+        // Connect to the Wojtek simulator over the shared network
+        if (this.enableNetworking) {
+            this.connectToRobot();
+        }
+
         // Run every frame
         this.createEvent("UpdateEvent").bind(() => {
             this.onUpdate();
         });
+    }
+
+
+    // ----------------------------------------------------
+    // ROBOT NETWORKING
+    // ----------------------------------------------------
+
+    private connectToRobot() {
+
+        if (!this.internetModule || !this.serverIp) {
+            return;
+        }
+
+        // Plain ws:// (no TLS) to a local IP -- requires "Experimental
+        // APIs" enabled in Project Settings. Fine for this prototype; such
+        // a Lens can't be published as-is.
+        const url = "ws://" + this.serverIp + ":" + this.serverPort + this.serverPath;
+
+        this.socket = this.internetModule.createWebSocket(url);
+
+        this.socket.onopen = () => {
+            this.isConnected = true;
+            print("Connected to Wojtek bridge at " + url);
+        };
+
+        this.socket.onclose = (event) => {
+            this.isConnected = false;
+            print("Wojtek bridge connection closed: " + event.reason);
+            this.scheduleReconnect();
+        };
+
+        this.socket.onerror = () => {
+            this.isConnected = false;
+            print("Wojtek bridge socket error");
+            this.scheduleReconnect();
+        };
+    }
+
+    private scheduleReconnect() {
+
+        const retryEvent = this.createEvent("DelayedCallbackEvent");
+
+        retryEvent.bind(() => {
+            this.connectToRobot();
+        });
+
+        retryEvent.reset(2.0);
+    }
+
+    private sendCommand() {
+
+        if (!this.socket || !this.isConnected) {
+            return;
+        }
+
+        const payload = JSON.stringify({
+            vx: this.currentVx,
+            wz: this.currentWz
+        });
+
+        this.socket.send(payload);
     }
 
 
@@ -182,6 +290,23 @@ export class PinchDragNavigator extends BaseScriptComponent {
 
 
         this.wasPinching = isPinchingNow;
+
+
+        // -----------------------------
+        // SEND TO ROBOT (throttled)
+        // -----------------------------
+
+        if (this.enableNetworking && this.sendRateHz > 0) {
+
+            this.sendAccumulator += getDeltaTime();
+
+            const sendInterval = 1.0 / this.sendRateHz;
+
+            if (this.sendAccumulator >= sendInterval) {
+                this.sendAccumulator = 0;
+                this.sendCommand();
+            }
+        }
     }
 
 

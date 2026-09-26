@@ -30,11 +30,17 @@
     arrowText: false
     arrowTransform: false
     deadzoneScreen: false
+    enableNetworking: false
     endAudio: false
     endSound: false
+    internetModule: false
     maxAngularSpeed: false
     maxDragScreen: false
     maxLinearSpeed: false
+    sendRateHz: false
+    serverIp: false
+    serverPath: false
+    serverPort: false
     startAudio: false
     startSound: false
     statusText: false
@@ -61,6 +67,12 @@
       endAudio: !<reference.AudioComponent> 00000000-0000-0000-0000-000000000000
       startSound: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
       endSound: !<reference.AudioTrackAsset> 00000000-0000-0000-0000-000000000000
+      internetModule: !<reference.InternetModule> 00000000-0000-0000-0000-000000000000
+      enableNetworking: true
+      serverIp: 192.168.8.131
+      serverPort: !<float> 8766.000000
+      serverPath: /ws
+      sendRateHz: !<float> 10.000000
   ScriptTypes:
     -
       {}
@@ -78,3 +90,9 @@
     - // @input Component.AudioComponent endAudio
     - // @input Asset.AudioTrackAsset startSound
     - // @input Asset.AudioTrackAsset endSound
+    - // @input Asset.InternetModule internetModule
+    - // @input bool enableNetworking = true
+    - '// @input string serverIp = "192.168.8.131"'
+    - // @input float serverPort = 8766
+    - '// @input string serverPath = "/ws"'
+    - // @input float sendRateHz = 10
