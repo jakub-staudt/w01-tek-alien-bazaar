@@ -117,7 +117,11 @@ class VlmBrainNode(Node):
         self.colour_info = None
         self.instruction = g("instruction")
         self.new_instruction = None   # None: nothing pending; "": stop; text: next task
-        self.endpoint = chat_url(g("url"))
+        # Empty strings mean the defaults: a launch that forwards VLM_URL /
+        # VLM_MODEL from the environment hands over "" when the variable is
+        # set but blank (a .env line left empty, `export VLM_URL=`).
+        self.model = g("model") or DEFAULT_MODEL
+        self.endpoint = chat_url(g("url") or DEFAULT_URL)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         if g("compressed"):
@@ -151,7 +155,7 @@ class VlmBrainNode(Node):
         self.tfl = TransformListener(self.tf, self, spin_thread=False)
         self.step_no = 0
         self.get_logger().info(
-            f"vlm brain up: {g('model')} at {self.endpoint}, pictures from {self.image_topic}")
+            f"vlm brain up: {self.model} at {self.endpoint}, pictures from {self.image_topic}")
         self.status(action="idle")
 
     # -- plumbing --------------------------------------------------------
@@ -249,9 +253,10 @@ class VlmBrainNode(Node):
     # -- the model -------------------------------------------------------
 
     def ask(self, frame, text, schema, max_tokens=60):
+        """-> (the answer as a dict, seconds taken, the JPEG the model saw)."""
         jpeg = self.jpeg_of(frame)
         body = {
-            "model": self._g("model"), "temperature": 0.0, "max_tokens": max_tokens,
+            "model": self.model, "temperature": 0.0, "max_tokens": max_tokens,
             "messages": [
                 {"role": "system", "content": SYSTEM},
                 {"role": "user", "content": [
@@ -265,11 +270,20 @@ class VlmBrainNode(Node):
         t0 = time.perf_counter()
         with urllib.request.urlopen(req, timeout=self._g("request_timeout_s")) as r:
             out = json.load(r)
-        img = PILImage.open(io.BytesIO(jpeg)).convert("RGB")
-        return parse_answer(out["choices"][0]["message"]["content"]), time.perf_counter() - t0, img
+        try:
+            content = out["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            # A 200 with no answer in it (no choices, a null message, a
+            # body that is not an object): the task ends in `error` like
+            # an unreachable server does, the node stays up.
+            raise RuntimeError(f"malformed model response ({exc!r}): {str(out)[:200]}") from exc
+        return parse_answer(content or ""), time.perf_counter() - t0, jpeg
 
-    def annotate(self, img, frame, point=None, text=""):
-        im = img.copy()
+    def annotate(self, jpeg, frame, point=None, text=""):
+        """The picture the model answered on, with its point drawn, to
+        wojtek/vlm/annotated. Decoded here, once per look; the verify call's
+        picture is never decoded."""
+        im = PILImage.open(io.BytesIO(jpeg)).convert("RGB")
         dr = ImageDraw.Draw(im)
         if point is not None:
             x, y = point[0] / 1000.0 * im.width, point[1] / 1000.0 * im.height
@@ -397,8 +411,8 @@ class VlmBrainNode(Node):
                 if kind == "look":
                     self.step_no += 1
                     frame = self.fresh_frame()
-                    answer, dt, img = self.ask(frame, task_prompt(instruction), SCHEMA)
-                    self.annotate(img, frame, answer.get("point_2d") if answer.get("type") == "goal" else None,
+                    answer, dt, jpeg = self.ask(frame, task_prompt(instruction), SCHEMA)
+                    self.annotate(jpeg, frame, answer.get("point_2d") if answer.get("type") == "goal" else None,
                                   f"#{self.step_no} {answer.get('type')} {answer.get('label', '')} ({dt:.1f}s)")
                     self.status(action="ask", answer=answer, latency_s=round(dt, 2))
                     action = ex.on_answer(answer)

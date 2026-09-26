@@ -91,6 +91,25 @@ def brain_launch_cmd(args):
         cmd.append(f"url:={args.vlm_url}")
     if args.vlm_model:
         cmd.append(f"model:={args.vlm_model}")
+    if getattr(args, "raw_camera", False):
+        cmd.append("compressed:=false")
+    return cmd
+
+
+def web_console_cmd(args):
+    """The PC's web console against the robot: the policy's command box
+    (--policy) and, with --raw-camera, the raw colour image where the
+    robot publishes no JPEG."""
+    params = []
+    if getattr(args, "policy", None):
+        params.append(f"policy:={args.policy}")
+    if getattr(args, "raw_camera", False):
+        params.append("camera_compressed:=false")
+    cmd = ["ros2", "run", "wojtek_pc", "web_console"]
+    if params:
+        cmd.append("--ros-args")
+        for p in params:
+            cmd += ["-p", p]
     return cmd
 
 
@@ -142,6 +161,13 @@ def main():
     ap.add_argument("--vlm-model", default=None,
                     help="Ollama model tag for --vlm (default: the brain's, "
                          "qwen3-vl:30b-a3b-instruct)")
+    ap.add_argument("--raw-camera", action="store_true",
+                    help="the robot publishes no camera JPEG "
+                         "(compressed_image_transport not installed, see "
+                         "deploy/deck/README.md): the VLM brain and the web "
+                         "console read the raw colour image instead, at the "
+                         "cost of wifi bandwidth. Robot sessions only; the "
+                         "sim camera publishes its own JPEG")
     ap.add_argument("--plotjuggler", action="store_true", help="also open PlotJuggler")
     ap.add_argument("--benchmark", action="store_true",
                     help="with --sim: also start the AprilTag benchmark rig "
@@ -196,6 +222,8 @@ def main():
             sim_args.append(f"vlm_url:={args.vlm_url}")
         if args.vlm_model:
             sim_args.append(f"vlm_model:={args.vlm_model}")
+        if args.raw_camera:
+            print(">> --raw-camera has no effect in sim: the sim camera publishes its own JPEG")
         spawn(["ros2", "launch", "wojtek_pc", "sim.launch.py", "rviz:=false"]
               + sim_args + policy_arg + launch_args)
         if args.benchmark:
@@ -260,13 +288,10 @@ def main():
     # contract; without --policy they fall back to conservative defaults.
     # In sim mode the console is sim.launch.py's (console:=, web by default;
     # sim_session_args carried the flags there) -- nothing to start here.
-    console_policy = (
-        ["--ros-args", "-p", f"policy:={args.policy}"] if args.policy else []
-    )
     if not args.sim and not args.no_console:
         if args.web_console:
             print(">> launching web operator console -- open http://localhost:8080")
-            spawn(["ros2", "run", "wojtek_pc", "web_console"] + console_policy)
+            spawn(web_console_cmd(args))
         else:
             print(">> launching operator console (ros2 run wojtek_pc console)")
             spawn(["ros2", "run", "wojtek_pc", "console"])

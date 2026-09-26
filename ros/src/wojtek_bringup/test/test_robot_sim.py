@@ -26,6 +26,8 @@ class _Args:
         self.vlm = kw.get("vlm", False)
         self.vlm_url = kw.get("vlm_url", None)
         self.vlm_model = kw.get("vlm_model", None)
+        self.raw_camera = kw.get("raw_camera", False)
+        self.policy = kw.get("policy", None)
 
 
 def test_default_leaves_the_console_choice_to_the_launch():
@@ -60,6 +62,18 @@ def test_brain_launch_cmd_forwards_only_what_was_given():
         ["ros2", "launch", "wojtek_nav", "brain.launch.py"]
     cmd = brain_launch_cmd(_Args(vlm=True, vlm_url="http://box:11434", vlm_model="m"))
     assert cmd[4:] == ["url:=http://box:11434", "model:=m"]
+    # A robot without the compressed plugin: the brain reads the raw image.
+    assert brain_launch_cmd(_Args(vlm=True, raw_camera=True))[4:] == ["compressed:=false"]
+
+
+def test_web_console_cmd_carries_the_policy_and_the_raw_camera_choice():
+    from wojtek_bringup.robot import web_console_cmd
+    assert web_console_cmd(_Args()) == ["ros2", "run", "wojtek_pc", "web_console"]
+    assert web_console_cmd(_Args(policy="org/x"))[4:] == ["--ros-args", "-p", "policy:=org/x"]
+    assert web_console_cmd(_Args(policy="org/x", raw_camera=True))[4:] == \
+        ["--ros-args", "-p", "policy:=org/x", "-p", "camera_compressed:=false"]
+    assert web_console_cmd(_Args(raw_camera=True))[4:] == \
+        ["--ros-args", "-p", "camera_compressed:=false"]
 
 
 class _FakeProc:
