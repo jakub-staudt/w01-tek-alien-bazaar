@@ -23,8 +23,17 @@ usage: run.sh {build|up|down|shell|gui|test} [args]
 USAGE
 }
 
+# Compose file stack, the same choice ros/sim.sh makes: on macOS Docker
+# runs in a VM and the sim is on the bridge network, so the page joins that
+# bridge with its port published (compose.mac.yaml); Linux keeps host
+# networking next to the sim.
+COMPOSE=(-f compose.yaml)
+if [ "$(uname -s)" = "Darwin" ]; then
+  COMPOSE+=(-f compose.mac.yaml)
+fi
+
 compose() {
-  (cd "$HERE/docker" && docker compose "$@")
+  (cd "$HERE/docker" && docker compose "${COMPOSE[@]}" "$@")
 }
 
 up() {
