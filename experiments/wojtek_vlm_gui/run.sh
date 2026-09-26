@@ -18,7 +18,11 @@ usage: run.sh {build|up|down|shell|gui|test} [args]
   up       start the container (idempotent)
   down     stop and remove it
   shell    interactive shell inside it (ROS 2 sourced, venv on PATH)
-  gui      the operator page: streamlit on http://localhost:8501
+  gui      the operator page (JS, served by wojtek_vlm_gui.server) on http://localhost:8501;
+           ROS_DOMAIN_ID from this shell is passed in (the cable bench uses 43)
+  walker   the bench's legs: /cmd_vel -> odom->base_link + the page's Walk guide
+           (a person carries the camera). On the real robot without leg odometry:
+           run.sh walker --ros-args -p role:=odometry (never with leg odometry on)
   test     model-free unit tests (EXP_PY=<host python> to run outside docker)
 USAGE
 }
@@ -65,9 +69,14 @@ case "${1:-}" in
     shift
     up
     # -i only (no -t): works from a plain terminal and from a background job.
-    exec docker exec -i "$CONTAINER" /entrypoint.sh \
-      streamlit run --server.headless=true --server.showEmailPrompt=false \
-      --server.port=8501 wojtek_vlm_gui/app.py "$@"
+    exec docker exec -i -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}" "$CONTAINER" /entrypoint.sh \
+      python3 -m wojtek_vlm_gui.server --port 8501 "$@"
+    ;;
+  walker)
+    shift
+    up
+    exec docker exec -i -e ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-42}" "$CONTAINER" /entrypoint.sh \
+      python3 -m wojtek_vlm_gui.walker_node "$@"
     ;;
   test)
     shift

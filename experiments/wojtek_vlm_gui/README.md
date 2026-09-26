@@ -6,7 +6,7 @@
 > or next to the robot's ROS 2 graph; launching, arming and disarming the
 > robot remain human actions. Interfaces are unstable by definition.
 
-A Streamlit page on http://localhost:8501 where the operator types a task
+A JavaScript page on http://localhost:8501 (served by `wojtek_vlm_gui.server`) where the operator types a task
 ("go to the purple pillar"), watches Wojtek's VLM brain work through it
 step by step, and keeps the robot's Stand up / Arm / Disarm buttons under
 their hand. The brain is `wojtek_nav`'s `vlm_brain_node`
@@ -19,7 +19,7 @@ services.
 ## How it is wired
 
 ```
- operator ──► Streamlit :8501 (this experiment, its own container)
+ operator ──► JS page :8501 (server.py, this experiment, its own container)
                 │ task ─────────► /wojtek/vlm/instruction (String) ──► vlm_brain_node ── /v1/chat/completions ──► Ollama on the DGX
                 │ STOP ─────────► /wojtek/nav/cancel (Empty) + "" instruction           │ pixel
                 │ step log ◄──── /wojtek/vlm/status (JSON, latched)                     ▼
@@ -30,11 +30,13 @@ services.
  pad, Steam Deck, web console, text_commander ──► /cmd_vel too: policy_node keeps the last message, 0.5 s dead-man
 ```
 
-- The page never publishes `/cmd_vel` and never subscribes to a camera
-  topic (`wojtek_vlm_gui/limits.py` lists everything it touches; the
-  tests assert the publisher and subscription sets). The only picture it
-  shows is the frame the brain annotated, one per model call, which
-  travels between two processes on the PC, never across the robot's WiFi.
+- The page never publishes `/cmd_vel` (`wojtek_vlm_gui/limits.py` lists
+  everything it touches; the tests assert the publisher and subscription
+  sets). It shows two pictures: the frame the brain annotated, one per
+  model call, and (since 2026-09-26) the camera's own JPEG live, the same
+  `/compressed` stream the brain reads. On the bench the page runs on the
+  RPi next to the camera, so that stream crosses no wifi; over the robot's
+  AP it is a second reader of the JPEG (tens of KB a frame at 640x480).
 - The model route is the brain's, not the page's: `VLM_URL` and
   `VLM_MODEL` in the repo-root `.env`, read by `ros/sim.sh` into the
   `wojtek_robot` container and by `brain.launch.py`. The only inference
@@ -65,6 +67,61 @@ In the page: `Stand up`, then `Arm`, then type the task. Use the
 `-instruct` model tags only: Ollama ignores `think=false` on the thinking
 tags and every step pays a hidden preamble.
 
+## The camera bench: a person as the robot's legs
+
+For testing the brain on the real camera without the robot walking. The
+robot's computer is cabled to the PC and runs only the camera, the
+`sysmon_node` and a zenoh bridge (zenoh-plugin-ros2dds) that passes an allow
+list of topics over the cable: the colour JPEG, the raw depth, their
+camera_info, the load, the drive topics and the four operator services.
+Everything else runs on the PC, on its own ROS domain so it never mixes
+with a sim session: the other end of the bridge, the real nav stack
+(`costmap.launch.py`: costmap, goto, the pixel resolver) on the robot's
+depth, the brain, the camera mount transform (from
+`wojtek_perception_bringup/config/extrinsics.yaml`), and this page.
+
+The one missing piece is the legs. `./run.sh walker` supplies them: it
+integrates `/cmd_vel` into odom -> base_link as if the robot had walked it
+(yaw gain 0.76, the gait's 0.38 of the commanded 0.5 rad/s the brain times
+its turns by) and publishes a guide the page shows in its **Walk** panel:
+an arrow and words for the command (`WALK FORWARD 0.30 m/s`, `TURN LEFT on
+the spot, 22 deg/s`, `STAND STILL`), the turn or distance so far, and a
+compass to goto's goal from where the robot stands. The person carrying the
+camera does what the panel says. Never run the walker next to a real robot:
+it publishes a second odom -> base_link.
+
+```bash
+ROS_DOMAIN_ID=43 ./experiments/wojtek_vlm_gui/run.sh walker
+ROS_DOMAIN_ID=43 ./experiments/wojtek_vlm_gui/run.sh gui     # http://localhost:8501
+```
+
+The page is laid out as a chat: the operator's tasks on the right, the
+brain's steps on the left in plain words ("I see the chair, heading
+there", "Blocked on the way, target 1.6 m away"), each look with the
+picture the model answered on, newest at the bottom; the log scrolls
+inside the screen and the page itself never grows. The history lives in
+the browser (a reload starts with the brain's last task only).
+`GET /health` on the server reports each stream's counter and age, the
+first place to look when a panel stops moving.
+
+Two bridge traps, both seen on the bench. A latched (transient-local)
+topic comes out of the bridge as old messages out of order, so the bench
+topics are volatile. And a topic whose only PC-side reader restarts can
+lose its route for good: the RPi end drops its reader and never rebuilds
+it. Keep one permanent reader on the PC side of any such topic (the bench
+does, for `/wojtek/sys/stat`).
+
+Measured on the bench (2026-09-26, RPi 4, D435 on a USB 2 port): colour
+640x480 and raw depth 480x270, both at 30 fps from the camera, arrive on
+the PC at ~20 fps (the bridge caps them). The camera driver, pinned to
+core 0 with the depth filters, point cloud, alignment and RGBD off, fills
+that core: ~65 % converting and JPEG-encoding colour at 30 fps (a third
+of those frames never leave, the bridge sends 20), ~19 % taking USB
+frames, ~13 % kernel interrupt work for USB and for the Ethernet, whose
+interrupts also land on core 0. The bridge and `sysmon_node` share core 1
+at ~35 %: ~21 % the bridge reading the frames and sending ~5.5 MB/s, the
+rest cross-core wake-ups and kernel workers.
+
 ## The rule with the pad and the Deck
 
 `/cmd_vel` is shared by every drive source, and `policy_node` keeps
@@ -83,6 +140,8 @@ also ends the task.
 | `finished: done` in green, any other result (`gave_up`, `cancelled`, `replaced`, `error ...`, `timeout`) in red | the finishing status |
 | `goto: driving`, `pixel: sent` in the sidebar | `/wojtek/nav/status`, `/wojtek/nav/pixel_status` |
 | the robot's own answer after every Robot button | the services' responses |
+| right column: one bar per core of the computer serving the page (the RT cores marked), load, memory, SoC temperature -- on the bench, the RPi | `/proc/stat`, `/proc/loadavg`, `/proc/meminfo`, the thermal zone |
+| right column, below: the camera live, with the frame's size and age; a warning when the driver goes quiet | `/camera/camera/color/image_raw/compressed` |
 
 A task typed while nobody subscribes to the instruction topic (no session
 with `vlm:=true`) is refused in the page with a message, never dropped
@@ -94,13 +153,18 @@ task is a STOP.
 | path | purpose |
 |---|---|
 | `run.sh` | `build \| up \| down \| shell \| gui \| test` |
-| `docker/` | the `wojtek_vlm_gui` image (ros:jazzy-ros-base + a Streamlit venv) and compose service (host net, the sim's DDS settings) |
+| `docker/` | the `wojtek_vlm_gui` image (ros:jazzy-ros-base + a Starlette/uvicorn venv) and compose service (host net, the sim's DDS settings) |
 | `wojtek_vlm_gui/limits.py` | every topic and service the page touches; what it never publishes |
 | `wojtek_vlm_gui/task_log.py` | the brain's status stream as the page prints it (pure) |
-| `wojtek_vlm_gui/brain_client.py` | the ROS 2 node: instruction and cancel out, status and picture in |
+| `wojtek_vlm_gui/brain_client.py` | the ROS 2 node: instruction and cancel out, status, picture and camera JPEG in |
+| `wojtek_vlm_gui/sysmon.py` | the computer panel's readers of /proc and /sys (pure) |
 | `wojtek_vlm_gui/arm_switch.py` | the operator's service calls |
-| `wojtek_vlm_gui/app.py` | the page |
-| `tests/` | model-free: the log, the client against a mock node, the switch, the hygiene guard |
+| `wojtek_vlm_gui/server.py` | the page's server: one ROS node, the page on `/`, the websocket on `/ws` |
+| `wojtek_vlm_gui/web/` | the page itself: `index.html`, `app.js`, `style.css` (no build step) |
+| `wojtek_vlm_gui/wire.py` | the websocket protocol: JSON text frames, tagged binary frames for the camera, the annotated picture and the depth (pure) |
+| `wojtek_vlm_gui/walker.py`, `walker_node.py` | the bench's legs: /cmd_vel integrated into odom->base_link and the page's Walk guide |
+| `wojtek_vlm_gui/sysmon_node.py` | the robot's load on `/wojtek/sys/stat`, the only piece that runs on the robot |
+| `tests/` | model-free: the log, the client against a mock node, the switch, the machine parsers, the hygiene guard |
 
 ```bash
 ./experiments/wojtek_vlm_gui/run.sh test                      # in the container

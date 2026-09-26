@@ -2,7 +2,7 @@
 
 What it guards: the page writes only the instruction and the cancel (never
 /cmd_vel, never a goal), reads only the brain's and goto's status and the
-annotated picture (never a camera topic), refuses a task nobody listens
+annotated picture and the camera's JPEG, refuses a task nobody listens
 to, and stops in the web console's order. Needs rclpy importable (the
 wojtek_vlm_gui container); skipped elsewhere.
 """
@@ -15,7 +15,7 @@ import pytest
 
 pytest.importorskip("rclpy")
 
-from sensor_msgs.msg import Image  # noqa: E402
+from sensor_msgs.msg import CompressedImage, Image  # noqa: E402
 from std_msgs.msg import Empty, String  # noqa: E402
 
 from wojtek_vlm_gui import limits  # noqa: E402
@@ -40,12 +40,24 @@ def test_the_only_publishers_are_the_instruction_and_the_cancel():
         assert topic not in created
 
 
-def test_the_subscriptions_are_the_status_topics_and_the_annotated_picture_only():
+def test_the_subscriptions_are_the_status_topics_the_pictures_and_the_robot_load():
     _, node, _ = _client()
     topics = {c.args[1] for c in node.create_subscription.call_args_list}
     assert topics == {limits.VLM_STATUS_TOPIC, limits.GOTO_STATUS_TOPIC,
-                      limits.PIXEL_STATUS_TOPIC, limits.ANNOTATED_TOPIC}
-    assert not any("camera" in t for t in topics)
+                      limits.PIXEL_STATUS_TOPIC, limits.ANNOTATED_TOPIC, limits.CAMERA_TOPIC,
+                      limits.DEPTH_TOPIC, limits.SYSMON_TOPIC, limits.GUIDE_TOPIC}
+    assert limits.CAMERA_TOPIC.endswith("/compressed")   # the JPEG, never the raw image
+
+
+def test_the_camera_jpeg_is_kept_latest_with_its_age():
+    client, _, _ = _client()
+    assert client.latest_jpeg() == (None, float("inf"))
+    for payload in (b"\xff\xd8first", b"\xff\xd8second"):
+        msg = CompressedImage()
+        msg.format, msg.data = "jpeg", payload
+        client._on_camera(msg)
+    jpeg, age = client.latest_jpeg()
+    assert jpeg == b"\xff\xd8second" and 0.0 <= age < 1.0
 
 
 def test_send_publishes_the_instruction_as_typed():
@@ -125,6 +137,41 @@ def test_a_picture_in_another_encoding_is_ignored():
     msg.data = bytes(3)
     client._on_annotated(msg)
     assert client._annotated is None
+
+
+def test_the_robot_load_is_kept_latest_with_its_age_and_garbage_is_ignored():
+    client, _, _ = _client()
+    assert client.latest_sysmon() == (None, float("inf"))
+    client._on_sysmon(String(data="not json"))
+    assert client.latest_sysmon()[0] is None
+    client._on_sysmon(String(data=json.dumps({"host": "robot-core", "cores": [50.0, 1.0, 0.0, 0.0],
+                                              "isolated": [2, 3], "load": [1.0, 2.0, 3.0],
+                                              "mem_used_mb": 1000, "mem_total_mb": 7800, "temp_c": 51.0})))
+    data, age = client.latest_sysmon()
+    assert data["host"] == "robot-core" and 0.0 <= age < 1.0
+
+
+def _depth_msg(width, height, step, encoding="16UC1", fill=b"\x01\x02"):
+    msg = Image()
+    msg.encoding, msg.width, msg.height, msg.step, msg.is_bigendian = encoding, width, height, step, 0
+    msg.data = fill * (step * height // 2)
+    return msg
+
+
+def test_depth_is_kept_as_packed_uint16_and_bumps_its_sequence():
+    client, _, _ = _client()
+    before = client.seq()["depth"]
+    client._on_depth(_depth_msg(3, 2, 6))
+    w, h, data = client.latest_depth()
+    assert (w, h, len(data)) == (3, 2, 12) and client.seq()["depth"] == before + 1
+
+
+def test_padded_depth_rows_are_trimmed_and_other_encodings_ignored():
+    client, _, _ = _client()
+    client._on_depth(_depth_msg(3, 2, 8))          # 2 pad bytes a row
+    assert len(client.latest_depth()[2]) == 12
+    client._on_depth(_depth_msg(3, 2, 6, encoding="32FC1"))
+    assert client.seq()["depth"] == 1
 
 
 def test_nav_status_words_are_kept_latest():
