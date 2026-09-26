@@ -26,7 +26,7 @@ TF odom->base_link (leg_odometry), base_link->camera (URDF / driver) ──┘  
 |---|---|
 | odometry (`odom->base_link`) | `wojtek_odometry`; on the robot by default, in the sim with `leg_odom:=true` |
 | depth stream | `wojtek_perception_bringup` (robot), `sim_camera_node` (sim); the RAW depth, 90 deg of view |
-| camera extrinsics | placeholder on the robot (see the perception README), exact in the sim |
+| camera extrinsics | the design mount in both worlds: the sim URDF (`with_camera`) and the robot's (`with_camera_mount`, `body.urdf.xacro`), the robot's still to be confirmed with a tape measure (see the perception README) |
 | costmap settings | `config/costmap.yaml` -- what the map is for and what every number follows from |
 | test world | `wojtek_pc/config/scene_nav.xml`: a corridor with two branches, a crate, a pillar, a 0.15 m box |
 

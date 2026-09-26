@@ -711,6 +711,11 @@ def common_launch_description(
                 # must match, and the VLM decides at ~0.3-0.5 Hz anyway.
                 "depth_profile": "848x480x6",
                 "color_profile": "1280x720x6",
+                # base_link -> camera_link is the URDF's here (the real
+                # xacro's with_camera_mount, published by the
+                # robot_state_publisher in every camera mode); a second
+                # publisher of the same edge would fight it.
+                "extrinsics": "false",
             }.items(),
             condition=IfCondition(LaunchConfiguration("perception")),
         ),
