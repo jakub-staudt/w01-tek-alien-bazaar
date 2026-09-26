@@ -70,6 +70,10 @@ hardware_interface::CallbackReturn MD80HardwareInterface::on_configure(
 
   set_modes();
 
+  const auto & params = info_.hardware_parameters;
+  link_stall_cycles_ =
+    params.count("link_stall_cycles") ? std::stoul(params.at("link_stall_cycles")) : 200;
+
   return CallbackReturn::SUCCESS;
 }
 
@@ -184,17 +188,53 @@ hardware_interface::return_type MD80HardwareInterface::read(
   const rclcpp::Time & /*time*/, const rclcpp::Duration & /*period*/)
 {
   std::size_t i = 0;
+  std::vector<double> raw;
+  raw.reserve(3 * md80_info_.size());
   for (auto candle : candle_instances) {
     for (auto & md : candle->md80s) {
-      md80_info_[i].state.position = md.getPosition() - initial_positions_[i];
-      md80_info_[i].state.velocity = md.getVelocity();
-      md80_info_[i].state.effort = md.getTorque();
-
-      // RCLCPP_INFO_STREAM(rclcpp::get_logger(get_name()),
-      //                    "can id " << i << " status: " << md.getQuickStatus());
+      const double pos = md.getPosition();
+      const double vel = md.getVelocity();
+      const double tau = md.getTorque();
+      md80_info_[i].state.position = pos - initial_positions_[i];
+      md80_info_[i].state.velocity = vel;
+      md80_info_[i].state.effort = tau;
+      raw.push_back(pos);
+      raw.push_back(vel);
+      raw.push_back(tau);
       ++i;
     }
   }
+
+  // Silent-bus detector. The CANdle library only updates a drive's state
+  // when that drive's response frame arrives; when the drives stop
+  // answering (bus power sag, CAN fault, drives reset) it keeps handing back
+  // the last values without any error -- measured 2026-09-26: an armed,
+  // standing robot collapsed, the controller manager stayed up, and the
+  // joint states were bit-identical for minutes. Live drives never are:
+  // twelve torque readbacks carry ADC noise every frame. So a raw state
+  // identical across ALL drives for link_stall_cycles consecutive cycles
+  // (URDF <hardware> param, default 200 = 1 s at 200 Hz; 0 disables) is a
+  // lost link. Returning ERROR makes the controller manager log "read cycle
+  // resulted in an error" and drop this component, which is exactly what
+  // the on-robot CM watchdog waits for before it restarts the stack once
+  // the drives answer again. Skipped in dry_run (disabled drives can sit
+  // at exact zeros) and until the update loop has been started.
+  if (update_loop_running_ && !dry_run_ && link_stall_cycles_ > 0) {
+    if (raw == last_raw_) {
+      if (++stall_cycles_ >= link_stall_cycles_) {
+        RCLCPP_ERROR_STREAM(
+          rclcpp::get_logger(get_name()),
+          "Drive link lost: no fresh data from any of the " << md80_info_.size()
+            << " drives for " << stall_cycles_ << " cycles");
+        stall_cycles_ = 0;
+        update_loop_running_ = false;
+        return hardware_interface::return_type::ERROR;
+      }
+    } else {
+      stall_cycles_ = 0;
+    }
+  }
+  last_raw_ = std::move(raw);
   return hardware_interface::return_type::OK;
 }
 
@@ -456,10 +496,14 @@ void MD80HardwareInterface::enable_motors()
   for (auto & candle : candle_instances) {
     candle->begin();
   }
+  stall_cycles_ = 0;
+  last_raw_.clear();
+  update_loop_running_ = true;
 }
 
 void MD80HardwareInterface::disable_motors()
 {
+  update_loop_running_ = false;
   for (auto & md80 : md80_info_) {
     auto candle = find_candle_by_motor_can_id(md80.can_id);
     candle->controlMd80Enable(md80.can_id, false);
