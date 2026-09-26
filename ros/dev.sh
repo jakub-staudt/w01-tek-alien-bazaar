@@ -56,7 +56,7 @@ fi
 # model server. Same list and same rule as sim.sh; `docker exec` passes no
 # host environment on its own.
 DOCKER_ENV=()
-for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL VLLM_API_KEY; do
+for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL; do
   if [ -z "${!var:-}" ]; then
     for envfile in ../../.env ../.env; do
       [ -f "$envfile" ] || continue

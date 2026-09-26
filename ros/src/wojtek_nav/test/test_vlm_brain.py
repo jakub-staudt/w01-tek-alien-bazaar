@@ -14,10 +14,10 @@ from wojtek_nav.vlm_brain import (
 
 
 @pytest.mark.parametrize("base", [
-    "http://dgx:8000", "http://dgx:8000/", "http://dgx:8000/v1", "http://dgx:8000/v1/",
+    "http://box:11434", "http://box:11434/", "http://box:11434/v1", "http://box:11434/v1/",
 ])
 def test_chat_url_takes_a_base_url_with_or_without_v1(base):
-    assert chat_url(base) == "http://dgx:8000/v1/chat/completions"
+    assert chat_url(base) == "http://box:11434/v1/chat/completions"
 
 
 def test_schema_is_the_whole_vocabulary():

@@ -9,7 +9,7 @@ virtual camera, RViz, the operator console and optionally a gamepad.
                                        [console:=web|qt|none] [gamepad:=true]
                                        [telemetry:=true] [deck:=false]
                                        [leg_odom:=true nav:=true]
-                                       [vlm:=true vlm_url:=http://host:8000 vlm_model:=...]
+                                       [vlm:=true vlm_url:=http://host:11434 vlm_model:=...]
 
 This is `robot.launch.py` with the hardware plugin swapped -- same
 controller_manager at 200 Hz, same broadcasters, same real_io_node, same
@@ -64,9 +64,9 @@ the corridor scene, the legs' odometry, and wojtek_nav's rolling costmap on
 top (/wojtek/nav/costmap). See wojtek_nav/README.md.
 
 vlm:=true adds the VLM brain (wojtek_nav/brain.launch.py) on top of that:
-instructions typed into the web console's brain panel go to a model server
-at vlm_url (VLM_URL from the environment, else localhost:8000 -- the vLLM
-that scripts/serve_vlm.sh starts on the GPU box) and come back as pixel
+instructions typed into the web console's brain panel go to the Ollama
+server at vlm_url (VLM_URL from the environment, else localhost:11434)
+serving qwen3-vl:30b-a3b-instruct, and come back as pixel
 goals for the resolver. The brain reads the camera's JPEG
 (/camera/camera/color/image_raw/compressed), which the sim camera publishes
 too, so the sim and the robot feed the same input.
@@ -107,8 +107,8 @@ from launch_ros.substitutions import FindPackageShare
 from wojtek_bringup.launch_common import common_launch_description, resolve_scene
 
 # The brain's defaults live with the brain; the sim only forwards them.
-VLM_DEFAULT_URL = "http://127.0.0.1:8000/v1"
-VLM_DEFAULT_MODEL = "Qwen/Qwen3-VL-8B-Instruct"
+VLM_DEFAULT_URL = "http://127.0.0.1:11434/v1"
+VLM_DEFAULT_MODEL = "qwen3-vl:30b-a3b-instruct"
 
 
 def _camera_node(context):

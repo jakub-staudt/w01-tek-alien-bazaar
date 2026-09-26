@@ -128,8 +128,8 @@ the picture the model last answered on with its point drawn; STOP halts
 the whole chain. It needs the nav stack underneath and a model server:
 
 ```bash
-ros/src/wojtek_nav/scripts/serve_vlm.sh          # on the GPU box: vLLM + Qwen3-VL-8B, port 8000
-# VLM_URL=http://<that box>:8000 in ros/.env, then
+ollama serve                                     # on the GPU box: qwen3-vl:30b-a3b-instruct, port 11434
+# VLM_URL=http://<that box>:11434 in the repo-root .env, then
 ./sim.sh model_xml:=scene_nav.xml leg_odom:=true nav:=true vlm:=true
 ros2 run wojtek_bringup robot --web-console --vlm            # the robot (PC side)
 ```
@@ -280,7 +280,7 @@ Flags:
                 the robot), locally with --sim; add --no-console to
                 replace the console entirely
 --vlm           the VLM brain for this session (PC side; --vlm-url /
-                --vlm-model override VLM_URL and the 8B default); the
+                --vlm-model override VLM_URL and the 30B default); the
                 stack underneath needs perception:=true nav:=true
 ```
 The stack comes up DISARMED. **Arming is manual** (that's when torque reaches the

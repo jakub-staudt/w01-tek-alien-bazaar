@@ -45,7 +45,7 @@
 #   ./sim.sh model_xml:=scene_nav.xml leg_odom:=true nav:=true vlm:=true
 #                               the VLM session: corridor scene, leg odometry,
 #                               costmap + goto + pixel resolver, and the brain
-#                               talking to the model server at VLM_URL (from
+#                               talking to the Ollama server at VLM_URL (from
 #                               the host environment or ../.env; see
 #                               .env.example) -- type instructions into the
 #                               web console's brain panel
@@ -165,11 +165,11 @@ fi
 # environment or else the gitignored repo-root .env (see .env.example):
 # HF_ORGANIZATION names the keeper org of the pinned default policy --
 # without it the launch dies at once with "empty policy reference" --
-# HF_TOKEN downloads it, VLM_URL / VLLM_API_KEY point the VLM brain
-# (vlm:=true) at the model server. Read by name, not sourced, so nothing
+# HF_TOKEN downloads it, VLM_URL / VLM_MODEL point the VLM brain
+# (vlm:=true) at the Ollama server. Read by name, not sourced, so nothing
 # else in .env leaks into the container. `docker exec` passes no host
 # environment on its own, which is why this is here.
-for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL VLLM_API_KEY; do
+for var in HF_ORGANIZATION HF_TOKEN WOJTEK_POLICY VLM_URL VLM_MODEL; do
   if [ -z "${!var:-}" ]; then
     for envfile in ../../.env ../.env; do
       [ -f "$envfile" ] || continue

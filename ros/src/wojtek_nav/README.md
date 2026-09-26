@@ -164,14 +164,14 @@ limit -- the VLM must hand over the way round as the next pixel.
 
 The loop on top: a user's instruction in, an exploration until the target
 is seen, never a guessed goal. The policy is `wojtek_nav/vlm_brain.py`
-(pure, desk-tested); the node talks to any OpenAI-compatible endpoint with
-JSON-schema structured output (vLLM, Ollama) and to the two nodes above.
+(pure, desk-tested); the node talks to Ollama serving
+qwen3-vl:30b-a3b-instruct (its OpenAI-compatible endpoint, JSON-schema
+structured output) and to the two nodes above.
 
 ```bash
-# 1. On the GPU box: vLLM serving Qwen3-VL-8B-Instruct on port 8000 (docker;
-#    --bare for an installed vllm, --check to ask whether one is up).
-ros/src/wojtek_nav/scripts/serve_vlm.sh
-# 2. On the PC: VLM_URL=http://<that box>:8000 in ros/.env (see .env.example), then
+# 1. On the GPU box: Ollama serving the model on port 11434.
+ollama pull qwen3-vl:30b-a3b-instruct && ollama serve
+# 2. On the PC: VLM_URL=http://<that box>:11434 in the repo-root .env (see .env.example), then
 ./ros/sim.sh model_xml:=scene_nav.xml leg_odom:=true nav:=true vlm:=true   # the sim session
 ros2 run wojtek_bringup robot --web-console --vlm    # the robot (PC side; the RPi stack
                                                      # needs perception:=true nav:=true --
@@ -186,10 +186,8 @@ ros2 topic pub -1 /wojtek/vlm/instruction std_msgs/String "data: stop"     # or 
 `brain.launch.py` is the one node with its arguments (`url`, `model`,
 `instruction`, `image_topic`, `compressed`); `url` takes the server's
 base URL with or without `/v1`, and defaults to `VLM_URL` from the
-environment. The default model is the 8B on vLLM, for the reason the
-benchmark below gives. `ros2 run wojtek_nav vlm_brain_node --ros-args -p
-url:=... -p model:=qwen3-vl:30b-a3b-instruct` still runs it against an
-Ollama.
+environment. The model is qwen3-vl:30b-a3b-instruct (`model`, else
+`VLM_MODEL`).
 
 **What crosses the robot's wifi.** The brain runs on the PC, next to the
 model, and reads the camera node's own JPEG
@@ -238,19 +236,17 @@ orange crate for the low box (both orange) and the first approach ran
 into the pillar's costmap halo -- the verification and the turn-after-
 block are what got it out. Per call: pointing 1.1-1.5 s, verify 0.2 s.
 
-`scripts/point_bench.py` is the offline pointing benchmark behind the
-model choice: nine sim frames with the objects' true pixels and depth,
-per-object queries and absent-object queries, scored in metres through
-the same maths as the resolver. On it qwen3-vl 8B (vLLM, bf16) and
-30B-A3B (Ollama, Q4) point equally well (median 0.15-0.18 m); the 30B-A3B
-invented a "chair" on the only visible box in 4 of 9 absent cases, the 8B
-in 0-1 -- the reason the loop verifies before it moves.
+`scripts/point_bench.py` is the offline pointing benchmark: nine sim
+frames with the objects' true pixels and depth, per-object queries and
+absent-object queries, scored in metres through the same maths as the
+resolver. On it qwen3-vl:30b-a3b-instruct points to a median 0.15-0.18 m,
+but invented a "chair" on the only visible box in 4 of 9 absent cases --
+the reason the loop verifies before it moves.
 
 ## Next
 
 The verification prompt against look-alikes (the crate/low-box case), a
-larger pointing set with masks, and an A/B of the 8B on vLLM (FP8) as the
-brain's model. Then: negative obstacles (a hole or a step down is *missing* floor, which
+larger pointing set with masks. Then: negative obstacles (a hole or a step down is *missing* floor, which
 this costmap reads as unknown, not as danger) and the step-height decision
 for a legged robot (the 0.15 m box is a wall here; whether it should be is
 the policy's business).
