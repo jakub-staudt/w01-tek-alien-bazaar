@@ -742,11 +742,18 @@ def common_launch_description(
         DeclareLaunchArgument(
             "nav_cpus", default_value="0,1" if hardware == "real" else "",
         ),
+        # nav_costmap:=false starts goto alone: no camera chain, no costmap.
+        # For the split where a second computer owns perception and the
+        # brain and hands this one setpoints in odom (wojtek/nav/goal).
+        DeclareLaunchArgument("nav_costmap", default_value="true"),
         IncludeLaunchDescription(
             PathJoinSubstitution(
                 [FindPackageShare("wojtek_nav"), "launch", "costmap.launch.py"]
             ),
-            launch_arguments={"cpus": LaunchConfiguration("nav_cpus")}.items(),
+            launch_arguments={
+                "cpus": LaunchConfiguration("nav_cpus"),
+                "costmap": LaunchConfiguration("nav_costmap"),
+            }.items(),
             condition=IfCondition(LaunchConfiguration("nav")),
         ),
         # The deck panel (wojtek_deck): a browser cockpit for a handheld on
