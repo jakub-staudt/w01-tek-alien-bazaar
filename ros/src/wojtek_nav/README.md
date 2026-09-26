@@ -137,7 +137,9 @@ colour pixel (u, v) + picture stamp ──► depth pixel on the same viewing ra
   longer than that is dropped (seen in the sim: the robot stopped 0.4 m
   short). So the object point is transformed once, at the picture's
   stamp, and the standoff setpoint goes out in `odom` every `repeat_s`
-  until goto says `reached`, has said `blocked` for `blocked_hold_s`
+  until goto says `reached` (after the send: a setpoint already within
+  goto's tolerance -- the target closer than the standoff -- is `reached`
+  at once, with no `driving` before it), has said `blocked` for `blocked_hold_s`
   (goto turns while blocked and may go on; a moment of it is not a
   failure), or `max_goal_s` passed.
 - **Status** on `/wojtek/nav/pixel_status` (latched): `resolving` /
@@ -217,15 +219,30 @@ Every step: a fresh colour frame → the model answers `goal` (a pixel) /
 with a second yes/no question that repeats the task (kind, colour, size)
 → only then the pixel goes to `pixel_goal_node`. `not_visible` turns 45°
 and looks again; after a full circle it steps 1 m forward. A target
-beyond the depth window (`no_depth`) is approached 1 m and looked at
-again; a `blocked` approach or goal turns instead of pushing the same
-answer. **Arrival is the executive's call**: `done` when goto reached the
-setpoint and the resolved object point is within `done_within_m` (1.1 m);
+beyond the depth window (`no_depth`: 0 % of the patch past 3 m) is
+approached 1 m **along the pixel's bearing** (the viewing ray through the
+colour camera_info and TF, fixed in `odom` once) and looked at again; a
+`blocked` approach looks again and detours 40° off the bearing, left then
+right. A `blocked` goal looks again once (a fresh picture re-resolves the
+target from where the robot stands: the leg odometry under-reads a long
+walk by up to ~30 % in the sim, so a setpoint fixed metres back can put
+the robot at the target with odom saying otherwise), and turns if it is
+blocked again. **Arrival is the executive's call**: `done` when goto reached
+or was blocked at the setpoint and the resolved object point is within
+`done_within_m` (1.1 m);
 the model's own `done` is not trusted (a thin pillar never "fills the
 view"). Status JSON on `/wojtek/vlm/status`, the picture with the model's
 point on `/wojtek/vlm/annotated` -- both shown live in the web console's
 brain panel, next to goto's and the resolver's status words; a new task
 on `/wojtek/vlm/instruction` replaces the running one.
+
+The loop cannot run forever: `max_steps` (30) looks, `max_s` (600 s),
+`max_blind` (8) approaches in a row that never bring the target into the
+depth window, or `max_stalls` (3) moves in a row that covered less than
+`min_progress_m` (0.25 m) each end the task as `gave_up`, the reason
+latched in the status's `error` (e.g. `no progress: 3 moves in a row
+covered less than 0.25 m each` -- what a robot that was never armed
+gets).
 
 Measured (sim, 2026-09-25, `scene_nav.xml`, qwen3-vl:30b-a3b-instruct on
 Ollama on the DGX): "podejdź do fioletowego słupa" from a pose facing
@@ -235,6 +252,14 @@ stopped 0.8 m from the box; on the way the model twice took the big
 orange crate for the low box (both orange) and the first approach ran
 into the pillar's costmap halo -- the verification and the turn-after-
 block are what got it out. Per call: pointing 1.1-1.5 s, verify 0.2 s.
+
+Measured (sim, 2026-09-26, same model, default spawn 4.8 m from the
+pillar -- beyond the 3 m depth window; machinekind/w01-tek#42): 5 steps,
+66 s to `done` 0.77 m from the pillar's surface (ground truth from
+`/sim/qpos`). One blind approach along the bearing (0.84 m odom, 1.01 m
+true), one into the crate's halo (`blocked`), a 40° detour round it, then
+the depth resolved at 2.26 m and the pixel goal finished it. Unarmed (the
+robot never moves), the same task ends after 3 steps as `gave_up`.
 
 `scripts/point_bench.py` is the offline pointing benchmark: nine sim
 frames with the objects' true pixels and depth, per-object queries and

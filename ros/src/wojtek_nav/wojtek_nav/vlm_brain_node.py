@@ -17,14 +17,20 @@ Inputs
                           image's 1-3 MB. compressed:=false takes the raw
                           image and encodes here (the sim without the
                           plugin, a robot without it).
+  colour camera_info      the intrinsics that turn the model's pixel into a
+                          bearing when the resolver has no depth for it
+                          (<image_topic dir>/camera_info by default).
   wojtek/nav/pixel_status, wojtek/nav/pixel_target, wojtek/nav/status
-                          the resolver's and goto's answers, TF odom->base_link.
+                          the resolver's and goto's answers, TF odom->base_link
+                          and odom->the camera's optical frame.
   wojtek/nav/cancel       a cancel from anyone else (the console's STOP, a
                           hand-typed one) ends the running task too; the
                           brain must not answer a stopped goto with a turn.
 Outputs
   wojtek/nav/pixel_goal   the verified pixel (PointStamped, picture stamp).
-  wojtek/nav/goal         straight approach/explore steps in base_link.
+  wojtek/nav/goal         approach/explore steps, in odom: fixed once, so a
+                          re-send never depends on the picture's stamp
+                          still being in goto's TF buffer.
   wojtek/nav/cancel       std_msgs/Empty on stop/replace: goto and the
                           resolver drop what they hold.
   cmd_vel                 turning in place (the only direct motion).
@@ -50,7 +56,7 @@ from PIL import Image as PILImage, ImageDraw
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import CompressedImage, Image
+from sensor_msgs.msg import CameraInfo, CompressedImage, Image
 from std_msgs.msg import Empty, String
 from tf2_ros import Buffer, TransformListener
 
@@ -63,6 +69,9 @@ from wojtek_nav.vlm_brain import (
     Explorer,
     chat_url,
     parse_answer,
+    pixel_ray,
+    ray_heading,
+    step_along,
     task_prompt,
     verify_prompt,
 )
@@ -83,6 +92,7 @@ class VlmBrainNode(Node):
         p("url", DEFAULT_URL)
         p("model", DEFAULT_MODEL)
         p("image_topic", "/camera/camera/color/image_raw")
+        p("colour_info_topic", "")      # "": <image_topic dir>/camera_info
         p("compressed", True)           # <image_topic>/compressed, the camera's own JPEG
         p("odom_frame", "odom")
         p("base_frame", "base_link")
@@ -92,6 +102,9 @@ class VlmBrainNode(Node):
         p("done_within_m", 1.1)       # standoff 0.7 + goto's tolerance + a little
         p("approach_m", 1.0)
         p("max_steps", 30)
+        p("max_blind", 8)             # approaches in a row with no depth on the target
+        p("min_progress_m", 0.25)     # a move shorter than this is a stall
+        p("max_stalls", 3)            # stalls in a row end the task
         p("max_s", 600.0)
         p("frame_max_age_s", 0.8)
         p("request_timeout_s", 180.0)
@@ -101,6 +114,7 @@ class VlmBrainNode(Node):
         self.pixel_status = None
         self.goto_status = None
         self.target = None
+        self.colour_info = None
         self.instruction = g("instruction")
         self.new_instruction = None   # None: nothing pending; "": stop; text: next task
         self.endpoint = chat_url(g("url"))
@@ -114,6 +128,9 @@ class VlmBrainNode(Node):
             self.image_topic = g("image_topic")
             self.create_subscription(Image, self.image_topic,
                                      lambda m: setattr(self, "frame", m), qos_profile_sensor_data)
+        info_topic = g("colour_info_topic") or g("image_topic").rsplit("/", 1)[0] + "/camera_info"
+        self.create_subscription(CameraInfo, info_topic,
+                                 lambda m: setattr(self, "colour_info", m), qos_profile_sensor_data)
         self.create_subscription(String, "wojtek/nav/pixel_status",
                                  lambda m: setattr(self, "pixel_status", m.data), latched)
         self.create_subscription(String, "wojtek/nav/status",
@@ -182,14 +199,39 @@ class VlmBrainNode(Node):
         self.pub_status.publish(String(data=json.dumps(kw, ensure_ascii=False)))
         self.get_logger().info(json.dumps(kw, ensure_ascii=False))
 
-    def distance_to_target(self):
-        if self.target is None:
-            return None
+    def robot_pose(self):
+        """(x, y, yaw) of base_link in odom, latest; None without TF."""
         try:
-            t = self.tf.lookup_transform(self._g("odom_frame"), self._g("base_frame"), Time()).transform.translation
+            t = self.tf.lookup_transform(self._g("odom_frame"), self._g("base_frame"), Time()).transform
         except Exception:  # noqa: BLE001 -- tf2 raises several unrelated types
             return None
-        return math.hypot(self.target.point.x - t.x, self.target.point.y - t.y)
+        q = t.rotation
+        yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+        return t.translation.x, t.translation.y, yaw
+
+    def distance_to_target(self):
+        pose = self.robot_pose()
+        if self.target is None or pose is None:
+            return None
+        return math.hypot(self.target.point.x - pose[0], self.target.point.y - pose[1])
+
+    def pixel_heading(self, frame, point):
+        """The heading in odom of the viewing ray through the model's pixel
+        (normalised (u, v)), with the camera's pose at the picture's stamp
+        (the latest one if that has left the buffer); None without the
+        intrinsics or TF."""
+        info = self.colour_info
+        if info is None or point is None:
+            return None
+        ray = pixel_ray(point[0] * info.width, point[1] * info.height, info.k)
+        odom = self._g("odom_frame")
+        for stamp in (Time.from_msg(frame.header.stamp), Time()):
+            try:
+                q = self.tf.lookup_transform(odom, info.header.frame_id, stamp).transform.rotation
+                return ray_heading((q.x, q.y, q.z, q.w), ray)
+            except Exception:  # noqa: BLE001 -- tf2 raises several unrelated types
+                continue
+        return None
 
     # -- the picture -----------------------------------------------------
 
@@ -270,15 +312,25 @@ class VlmBrainNode(Node):
         self.pub_cmd.publish(Twist())
         self.spin(1.0)
 
-    def step_forward(self, metres, frame):
+    def step_forward(self, metres, heading=None):
+        """Walk `metres` from where the robot stands along `heading` (odom
+        yaw; None: straight ahead). The setpoint is fixed in odom once, so
+        the re-sends mean the same point however long the walk takes.
+        -> (goto's final word, metres actually covered or None)."""
+        start = self.robot_pose()
+        if start is None:
+            raise RuntimeError("no TF odom -> base_link for an approach step")
+        if heading is None:
+            heading = start[2]
+        gx, gy = step_along(start, heading, metres)
         goal = PoseStamped()
-        goal.header.frame_id = self._g("base_frame")
-        goal.header.stamp = frame.header.stamp
-        goal.pose.position.x = float(metres)
-        goal.pose.orientation.w = 1.0
+        goal.header.frame_id = self._g("odom_frame")
+        goal.pose.position.x, goal.pose.position.y = float(gx), float(gy)
+        goal.pose.orientation.z, goal.pose.orientation.w = math.sin(heading / 2), math.cos(heading / 2)
         t0, last, seen_active = time.time(), 0.0, False
         while time.time() - t0 < 25.0:
             if time.time() - last >= 1.0:  # goto's dead-man is 3 s
+                goal.header.stamp = self.get_clock().now().to_msg()
                 self.pub_goal.publish(goal)
                 last = time.time()
             self.spin(0.05)
@@ -290,7 +342,10 @@ class VlmBrainNode(Node):
             if self.goto_status == "blocked" and time.time() - t0 > 6.0:
                 break
         self.spin(1.0)
-        return "reached" if self.goto_status in ("reached", "idle") and seen_active else (self.goto_status or "timeout")
+        res = "reached" if self.goto_status in ("reached", "idle") and seen_active else (self.goto_status or "timeout")
+        end = self.robot_pose()
+        moved = None if end is None else math.hypot(end[0] - start[0], end[1] - start[1])
+        return res, moved
 
     def send_pixel(self, frame, point):
         m = PointStamped()
@@ -316,7 +371,8 @@ class VlmBrainNode(Node):
     def run_task(self, instruction):
         self.instruction = instruction
         ex = Explorer(self._g("turn_deg"), self._g("done_within_m"), self._g("approach_m"),
-                      max_steps=int(self._g("max_steps")))
+                      max_steps=int(self._g("max_steps")), max_blind=int(self._g("max_blind")),
+                      min_progress_m=self._g("min_progress_m"), max_stalls=int(self._g("max_stalls")))
         self.step_no = 0
         t_start = time.time()
         action = ("look",)
@@ -330,7 +386,13 @@ class VlmBrainNode(Node):
                 self.check_interrupt()
                 kind = action[0]
                 if kind in Explorer.TERMINAL:
-                    self.status(action="finished", result=kind)
+                    if kind == "gave_up":
+                        # Not an exception, but the operator gets the reason
+                        # the same way: latched in `error`.
+                        self.halt()
+                        self.status(action="finished", result=kind, error=action[1])
+                    else:
+                        self.status(action="finished", result=kind)
                     return kind
                 if kind == "look":
                     self.step_no += 1
@@ -349,10 +411,21 @@ class VlmBrainNode(Node):
                     dist = self.distance_to_target()
                     self.status(action="pixel_goal", result=res, distance_to_target_m=None if dist is None else round(dist, 2))
                     action = ex.on_goal_result(res, dist)
-                elif kind in ("approach", "explore"):
-                    res = self.step_forward(action[1], frame)
-                    self.status(action=kind, metres=action[1], result=res)
-                    action = ex.on_move_result(res)
+                elif kind == "approach":
+                    _, metres, point, detour = action
+                    heading = self.pixel_heading(frame, point)
+                    if heading is not None:
+                        heading += math.radians(detour)
+                    res, moved = self.step_forward(metres, heading)
+                    self.status(action=kind, metres=metres, result=res,
+                                heading_deg=None if heading is None else round(math.degrees(heading), 1),
+                                detour_deg=detour, moved_m=None if moved is None else round(moved, 2))
+                    action = ex.on_move_result(res, moved)
+                elif kind == "explore":
+                    res, moved = self.step_forward(action[1])
+                    self.status(action=kind, metres=action[1], result=res,
+                                moved_m=None if moved is None else round(moved, 2))
+                    action = ex.on_move_result(res, moved)
                 elif kind == "search":
                     self.turn(action[1])
                     self.status(action="turn", deg=action[1], turned_total=ex.turned_deg)
