@@ -20,6 +20,7 @@ WORKDIR /ros2_ws
 # basename and would collide in the destination), so list packages explicitly.
 COPY ./src/wojtek_description/package.xml ./src/wojtek_description/package.xml
 COPY ./src/md80_hardware_interface/package.xml ./src/md80_hardware_interface/package.xml
+COPY ./src/md80_hardware_interface/3rd_party/*.patch ./src/md80_hardware_interface/3rd_party/
 COPY ./src/bmi160_serial_hardware_interface/package.xml ./src/bmi160_serial_hardware_interface/package.xml
 COPY ./src/bmx160_serial_hardware_interface/package.xml ./src/bmx160_serial_hardware_interface/package.xml
 COPY ./src/imu_i2c_hardware_interface/package.xml ./src/imu_i2c_hardware_interface/package.xml
@@ -54,6 +55,7 @@ RUN apt-get update && \
     rm -rf src/md80_hardware_interface/3rd_party/candle && \
     git clone https://github.com/mabrobotics/candle src/md80_hardware_interface/3rd_party/candle && \
     git -C src/md80_hardware_interface/3rd_party/candle checkout "$CANDLE_COMMIT" && \
+    for p in src/md80_hardware_interface/3rd_party/*.patch; do git -C src/md80_hardware_interface/3rd_party/candle apply "$(pwd)/$p"; done && \
     (rosdep init || true) && \
     rosdep update --rosdistro "$ROS_DISTRO" && \
     rosdep install --from-paths src -y -i && \

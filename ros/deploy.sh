@@ -204,7 +204,15 @@ if [ ! -e "${CANDLE_DIR}/CMakeLists.txt" ]; then
     git clone https://github.com/mabrobotics/candle "${CANDLE_DIR}"
 fi
 git -C "${CANDLE_DIR}" fetch --quiet origin || true
+# Drop the previous run's patch before moving the checkout, then re-apply the
+# local candle patches (see 3rd_party/*.patch) on the pinned commit.
+git -C "${CANDLE_DIR}" checkout --quiet -- .
 git -C "${CANDLE_DIR}" checkout --quiet "${CANDLE_COMMIT}"
+for patch in src/md80_hardware_interface/3rd_party/*.patch; do
+    [ -e "${patch}" ] || continue
+    echo "   candle: applying $(basename "${patch}")"
+    git -C "${CANDLE_DIR}" apply "$(pwd)/${patch}"
+done
 
 source "/opt/ros/${ROS_DISTRO}/setup.bash"
 # --skip-keys wojtek_pc: the PC-side package is deliberately excluded from

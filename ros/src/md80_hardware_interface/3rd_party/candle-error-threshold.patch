@@ -1,0 +1,24 @@
+Tolerate SPI reply misses in bursts instead of aborting the controller manager.
+
+Upstream candle throws "Fatal communication error!" from its own update
+thread after 5 consecutive missed replies from the CANdle HAT; nothing can
+catch it, so ros2_control_node aborts and the robot is down for the ~30 s the
+watchdog needs to restart the stack.  On Wojtek the SPI link to the HAT drops
+replies in bursts of up to ~20 per second (supply dips), and the MD80 driver
+already declares "Drive link lost" itself after link_stall_cycles (1 s at
+200 Hz) of no fresh data, which is the recovery path that should decide.
+deploy.sh applies this on top of the pinned CANDLE_COMMIT.
+
+diff --git a/include/bus.hpp b/include/bus.hpp
+index 05246dd..b4fcbde 100644
+--- a/include/bus.hpp
++++ b/include/bus.hpp
+@@ -30,7 +30,7 @@ class Bus
+ 	bool manageMsgErrors(bool ret);
+ 
+    private:
+-	static const uint32_t errorThreshold = 5;
++	static const uint32_t errorThreshold = 100;
+ 	static const uint32_t msgCntThreshold = 1000;
+ 	uint32_t msgCnt = 0;
+ 	uint32_t errorCnt = 0;
